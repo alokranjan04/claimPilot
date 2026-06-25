@@ -15,6 +15,7 @@ class PolicyContext(BaseModel):
     coverage_terms: list[str] = Field(min_length=1)
     exclusions: list[str] = []
     citations: list[Citation] = Field(min_length=1)
+    sufficient: bool = True
 
 
 class CoverageOpinion(BaseModel):
