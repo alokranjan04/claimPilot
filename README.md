@@ -92,7 +92,7 @@ export PROVIDER=azure        # core code unchanged; providers swap behind interf
 Built milestone by milestone (see [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md)):
 
 - ✅ **M0** Skeleton & quality gate · ✅ **M1** Typed domain models · ✅ **M2** Provider interfaces + fakes
-- 🚧 **M3** LangGraph orchestration · ⬜ **M4** RAG pipeline · ⬜ **M5** Real agents · ⬜ **M6** MCP servers
+- ✅ **M3** LangGraph orchestration · ✅ **M4** RAG pipeline · ✅ **M5** Real agents · ⬜ **M6** MCP servers
 - ⬜ **M7** Eval harness + CI gate · ⬜ **M8** API + queue + checkpointing · ⬜ **M9** Observability
 - ⬜ **M10–M11** Azure providers + deploy
 
