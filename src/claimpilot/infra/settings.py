@@ -41,5 +41,13 @@ class Settings(BaseSettings):
     # --- Queue ----------------------------------------------------------------
     queue_timeout_seconds: float = 30.0
 
+    # --- RAG pipeline ---------------------------------------------------------
+    rag_k: int = 5
+    rag_dense_weight: float = 0.6
+    rag_lexical_weight: float = 0.4
+    rag_tau_sufficient: float = 0.35
+    rag_chunk_tokens: int = 450
+    rag_chunk_overlap: int = 50
+
     # --- Fake provider options ------------------------------------------------
     fake_seed: int = 42
