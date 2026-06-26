@@ -198,6 +198,33 @@ class TestAutoApprovePath:
         assert result["compliance"].passed is True
         assert not result.get("errors")
 
+    async def test_mcp_tool_calls_in_trace(self) -> None:
+        """MCP tool calls are recorded in fraud_risk and compliance traces."""
+        settings = _test_settings()
+        rag = await _make_rag(settings)
+        graph = build_graph(settings, llm=_auto_approve_llm(), rag=rag)
+
+        raw = RawClaim(
+            claim_id="CLM-MCP",
+            policy_number="POL-100",
+            fnol_text="Fender bender. Damage $5000.",
+        )
+
+        result = await graph.ainvoke({"claim_id": raw.claim_id, "raw_input": raw})
+
+        trace_by_node = {t.node: t for t in result["trace"]}
+
+        # fraud_risk node should record claims_history + fraud_signals tool calls.
+        fr_trace = trace_by_node["fraud_risk"]
+        assert "tool_calls" in fr_trace.inputs
+        assert "claims_history.lookup" in fr_trace.inputs["tool_calls"]
+        assert "fraud_signals.score" in fr_trace.inputs["tool_calls"]
+
+        # compliance node should record regs.search tool call.
+        comp_trace = trace_by_node["compliance"]
+        assert "tool_calls" in comp_trace.inputs
+        assert "regs.search" in comp_trace.inputs["tool_calls"]
+
 
 class TestEscalatePath:
     async def test_escalate_high_amount(self) -> None:
