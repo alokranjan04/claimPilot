@@ -22,6 +22,9 @@ from claimpilot.agents.settlement import compute as settlement_compute
 from claimpilot.graph.state import GraphState
 from claimpilot.infra.interfaces import LLMClient
 from claimpilot.infra.settings import Settings
+from claimpilot.mcp_servers.claims_history import ClaimsHistoryServer
+from claimpilot.mcp_servers.fraud_signals import FraudSignalsServer
+from claimpilot.mcp_servers.regs import RegsServer
 from claimpilot.models.claim import ClaimFacts
 from claimpilot.models.common import Party
 from claimpilot.models.decisions import PolicyContext
@@ -138,16 +141,31 @@ def make_coverage_node(llm: LLMClient):  # type: ignore[no-untyped-def]
     return coverage_decision
 
 
-def make_fraud_risk_node(llm: LLMClient):  # type: ignore[no-untyped-def]
+def make_fraud_risk_node(  # type: ignore[no-untyped-def]
+    llm: LLMClient,
+    *,
+    claims_history: ClaimsHistoryServer | None = None,
+    fraud_signals: FraudSignalsServer | None = None,
+):
     """Create the fraud/risk-scoring graph node."""
 
     async def fraud_risk(state: GraphState) -> dict[str, Any]:
         facts = state["facts"]
         assert facts is not None
-        assessment = await fraud_assess(facts, llm=llm)
+        assessment = await fraud_assess(
+            facts,
+            llm=llm,
+            claims_history=claims_history,
+            fraud_signals=fraud_signals,
+        )
+        tool_calls: list[str] = []
+        if claims_history is not None:
+            tool_calls.append("claims_history.lookup")
+        if fraud_signals is not None:
+            tool_calls.append("fraud_signals.score")
         trace = StepTrace(
             node="fraud_risk",
-            inputs={"claim_id": state.get("claim_id", "")},
+            inputs={"claim_id": state.get("claim_id", ""), "tool_calls": tool_calls},
             outputs=assessment.model_dump(),
         )
         return {"risk": assessment, "trace": [trace]}
@@ -173,7 +191,11 @@ def make_settlement_node(llm: LLMClient):  # type: ignore[no-untyped-def]
     return settlement
 
 
-def make_compliance_node(llm: LLMClient):  # type: ignore[no-untyped-def]
+def make_compliance_node(  # type: ignore[no-untyped-def]
+    llm: LLMClient,
+    *,
+    regs: RegsServer | None = None,
+):
     """Create the compliance/audit graph node."""
 
     async def compliance(state: GraphState) -> dict[str, Any]:
@@ -183,10 +205,13 @@ def make_compliance_node(llm: LLMClient):  # type: ignore[no-untyped-def]
         settle = state["settlement"]
         assert facts is not None and ctx is not None
         assert coverage is not None and settle is not None
-        verdict = await compliance_review(facts, ctx, coverage, settle, llm=llm)
+        verdict = await compliance_review(facts, ctx, coverage, settle, llm=llm, regs=regs)
+        tool_calls: list[str] = []
+        if regs is not None:
+            tool_calls.append("regs.search")
         trace = StepTrace(
             node="compliance",
-            inputs={"claim_id": state.get("claim_id", "")},
+            inputs={"claim_id": state.get("claim_id", ""), "tool_calls": tool_calls},
             outputs=verdict.model_dump(),
         )
         return {"compliance": verdict, "trace": [trace]}

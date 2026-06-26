@@ -1,8 +1,6 @@
 """Compliance/audit agent.
 
-Pure async function:
-``(ClaimFacts, PolicyContext, CoverageOpinion, SettlementProposal, LLMClient)
-→ ComplianceVerdict``.
+Pure async function with optional MCP tool enrichment via the regs server.
 """
 
 from __future__ import annotations
@@ -12,6 +10,8 @@ from typing import Any
 
 from claimpilot.agents.prompts.compliance import SYSTEM_PROMPT, build_user_prompt
 from claimpilot.infra.interfaces import LLMClient
+from claimpilot.mcp_servers.base import AuthContext
+from claimpilot.mcp_servers.regs import RegsServer
 from claimpilot.models.claim import ClaimFacts
 from claimpilot.models.common import Citation
 from claimpilot.models.decisions import (
@@ -21,6 +21,8 @@ from claimpilot.models.decisions import (
     SettlementProposal,
 )
 from claimpilot.models.trace import AgentError
+
+_AUTH = AuthContext(caller="compliance_agent", scopes=["regs.read"])
 
 
 class ComplianceAgentError(Exception):
@@ -38,14 +40,36 @@ async def review(
     settlement: SettlementProposal,
     *,
     llm: LLMClient,
+    regs: RegsServer | None = None,
 ) -> ComplianceVerdict:
     """Review the adjudication for regulatory/policy compliance.
 
-    Spec: master-spec §4 — Compliance/Audit agent row.
+    When *regs* is provided, searches for applicable regulations and
+    includes them in the LLM prompt.
     """
+    tool_context = ""
+
+    # ── MCP tool call: regulatory search ─────────────────────────────
+    if regs is not None:
+        jurisdiction = context.citations[0].document if context.citations else "IL"
+        hits = regs.search(jurisdiction, "settlement", auth=_AUTH)
+        hits += regs.search(jurisdiction, "claims", auth=_AUTH)
+        if hits:
+            tool_context += "\n## Applicable Regulations (via MCP)\n"
+            seen: set[str] = set()
+            for hit in hits:
+                if hit.reg_id not in seen:
+                    tool_context += f"- [{hit.reg_id}] {hit.title}: {hit.text[:150]}\n"
+                    seen.add(hit.reg_id)
+
+    # ── Build prompt ─────────────────────────────────────────────────
+    user_prompt = build_user_prompt(facts, context, coverage, settlement)
+    if tool_context:
+        user_prompt += tool_context
+
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": build_user_prompt(facts, context, coverage, settlement)},
+        {"role": "user", "content": user_prompt},
     ]
 
     try:
@@ -76,7 +100,6 @@ async def review(
     citations = _parse_citations(raw_citations)
 
     # ComplianceVerdict validator: failed + no violations → invalid.
-    # Guard against this by synthesising a violation.
     if not passed and not violations:
         violations = ["Unspecified compliance violation"]
 
