@@ -29,3 +29,6 @@ jobs:
 
       - name: Test
         run: make test
+
+      - name: Eval gate
+        run: make eval
