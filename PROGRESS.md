@@ -10,13 +10,13 @@ Spec-driven, milestone by milestone. Everything runs **offline on deterministic 
 | M3 — LangGraph orchestration | ✅ Done | — |
 | M4 — RAG pipeline | ✅ Done | 98 |
 | M5 — Real agents + graph wiring (RAG→coverage) | ✅ Done | 126 |
-| M6 — MCP tool servers | 🚧 Next | |
-| M7 — Eval harness + CI gate | ⬜ Planned | |
-| M8 — API + queue + checkpointing | ⬜ Planned | |
-| M9 — Observability | ⬜ Planned | |
-| M10–M11 — Azure providers + deploy | ⬜ Planned | |
+| M6 — MCP tool servers | ✅ Done | 151 |
+| M7 — Eval harness + CI gate | ✅ Done | 169 |
+| M8 — API + queue + checkpointing | ✅ Done | 182 |
+| M9 — Observability | ✅ Done | 205 |
+| M10–M11 — Azure providers + deploy | 🚧 Next | |
 
-> The arc: **M0–M2 built the safe, testable foundation · M3 made it flow · M4 gave it grounded knowledge · M5 makes the decisions real.**
+> The arc: **M0–M2 built the safe, testable foundation · M3 made it flow · M4 gave it grounded knowledge · M5 makes the decisions real · M6 added enterprise tool integration · M7 gates every change on measurable quality · M8 exposes it all as a production-grade async REST API · M9 makes every claim traceable with spans, structured logs, and cost accounting.**
 
 ---
 
@@ -50,8 +50,56 @@ All four agents built on the coverage reference pattern (pure async, injected `L
 
 **Why it matters:** this is a working adjudication engine — a claim flows through real, grounded, auditable decisions and lands on the correct disposition. (126 tests)
 
+## M6 — MCP tool servers ✅
+Four MCP tool servers (`policy_db`, `claims_history`, `fraud_signals`, `regs`) with typed schemas, input validation, and **authz enforced at the boundary** (`_check_auth`, not the data model — the model never holds credentials). Relevant agents call tools through the interface (fraud/risk → claims_history + fraud_signals; compliance → regs with derived jurisdiction), and every tool call is recorded in the `trace`.
+
+**Why it matters:** enterprise integrations become reusable, standards-based, and observable — and tool-call correctness is now something the eval harness can score. (151 tests)
+
+---
+
+## M7 — Evaluation harness + CI gate ✅
+A 10-case golden dataset (`evals/golden/cases.json`) spanning every routing path — auto_approved (3), auto_denied (1), and escalated (6) — covering low-confidence, high-amount, high-fraud-risk, compliance-failure, multi-threshold, zero-payable, and insufficient-RAG-context scenarios. Each case has scripted LLM responses and declared expected outcomes. `evals/metrics.py` defines five gated metrics: **decision accuracy**, **escalation precision/recall**, **citation faithfulness** (all citation clause_ids must exist in the retrieved policy context — no hallucinations), and **tool-call correctness** (expected MCP tool calls must appear in the trace). `evals/run_evals.py` runs all cases end-to-end, emits a human-readable scorecard, and exits 1 if any gate threshold is breached. The CI workflow (`ci.yml`) runs `make eval` on every PR — a gate that blocks merge on metric regression.
+
+**Scorecard (fakes, offline):** 10/10 cases pass · decision accuracy 100% · escalation P/R 100%/100% · citation faithfulness 100% · tool-call accuracy 100% · p50 latency ≈ 5 ms/claim. (169 tests total)
+
+**Why it matters:** *"Every change is gated on these numbers"* — this is the interview closer. The scorecard is the evidence that the system produces grounded, correct decisions without hallucinated citations.
+
+## M8 — FastAPI surface + async worker + human-in-the-loop ✅
+A full REST API (`src/claimpilot/api/`) built on FastAPI with a background worker that consumes a `Queue`, runs the LangGraph graph, and persists results via the `Checkpointer` — all through the same DI interfaces used by the rest of the system (PROVIDER=fake for tests).
+
+**Endpoints:**
+- `POST /v1/claims` — accept and enqueue a claim, return `claim_id` and status `pending` immediately (202).
+- `GET /v1/claims/{id}` — poll status, disposition, all agent outputs (coverage, risk, settlement, compliance), full trace, and errors.
+- `GET /v1/claims/{id}/stream` — SSE stream of `StepTrace` events as each graph node completes; replays stored events if processing finished before the client connected.
+- `POST /v1/claims/{id}/decision` — human adjudicator approves/denies an escalated claim, transitioning it to `completed`; 409 if not in escalated status.
+- `GET /v1/evals/latest` — lazily runs the full eval harness and returns the gate-passing scorecard.
+- `GET /healthz` / `GET /readyz` — liveness and readiness probes.
+
+**Architecture details:** `ClaimStore` wraps the `Checkpointer` with typed `ClaimRecord` snapshots; `EventBus` routes `StepTrace | None` sentinels via per-claim `asyncio.Queue`; the worker publishes events via `graph.astream(stream_mode="values")` and sets `status=escalated` when disposition is escalated. Money amounts are serialized as strings (Pydantic v2 Decimal→JSON). The ASGI lifespan wires DI providers at startup and cancels the worker cleanly at shutdown.
+
+**E2e tests:** 13 scenarios in `tests/test_api_e2e.py` using `httpx.AsyncClient` + `ASGITransport` with a hand-rolled ASGI lifespan manager (no extra dependencies): submit→process→fetch auto-approved, decimal serialization, escalation→approve, escalation→deny, decision-on-non-escalated 409, SSE step+done events, SSE error event for unknown claim, evals gate.
+
+**Gate (182 tests, all green):** `ruff` clean · `mypy --strict` clean · 182/182 tests pass offline.
+
+---
+
+## M9 — Observability + cost meter ✅
+Three modules in `src/claimpilot/observability/` wired across the entire system:
+
+**`observability/tracer.py`** — OTel-compatible span model. `SpanData` (Pydantic, with UUID span_id/trace_id, claim_id, start/end times, duration_ms, attributes, status_ok) and a `SpanExporter` protocol with `NoOpSpanExporter` (default, zero overhead) and `InMemorySpanExporter` (test assertions). The `build_graph()` function now accepts an optional `span_exporter` parameter. Every graph node emits a span: agent nodes via the enhanced `_safe()` wrapper (async, catches errors), routing/terminal nodes via the new `_timed()` wrapper (sync). Both wrappers measure wall-clock latency and **patch `StepTrace.latency_ms`** on the returned trace entry — so the audit trail now carries real latency per node.
+
+**`observability/logging.py`** — structlog-based structured JSON logging. A `_drop_pii()` processor strips sensitive fields (`fnol_text`, `messages`, `prompt`, `raw_input`, `response_text`, `parties`, `claimant`, `name`) before any record reaches the output sink. `get_logger(claim_id)` binds `claim_id` as a context variable so every record is traceable without the caller passing it. `configure_logging()` is idempotent and supports JSON (prod) or console (dev) output. The worker now logs `claim_processing_started` and `claim_processing_completed` with disposition and cost, but never with PII.
+
+**`observability/cost_meter.py`** — `ClaimCostSummary` (per-claim cost and latency aggregation) and `compute_cost_summary(claim_id, trace)` which sums `StepTrace.cost_usd` and `latency_ms` per node. Cost uses a GPT-4o pricing proxy ($5/1M input, $15/1M output); fake LLM produces `Decimal(0)` (no real calls). Decimal values serialise as strings in JSON mode. The `ClaimRecord` now stores `cost_summary_data` and exposes `to_cost_summary()`. `GET /v1/claims/{id}` includes `cost_summary` in the response.
+
+**Eval scorecard**: `Scorecard.avg_cost_usd` computed from token counts in `compute_scorecard()`. The `run_evals.py` printer shows `Avg cost (est.)` per case. Real providers will populate non-zero costs via the `usage` field in LLM responses.
+
+**Tests** (`tests/test_observability.py`): 23 new tests — tracer unit tests (no-op, in-memory, clear, names, unique IDs, protocol conformance), graph integration tests (every node in the auto-approve path emits a span, claim_id on every span, real latency > 0, `StepTrace.latency_ms` populated after `ainvoke`), cost meter unit tests (empty trace, single step, multi-step sums, repeated-node accumulation, Decimal serialisation), and logging tests (PII filter drops all 8 keys, preserves non-PII, `get_logger` binds claim_id, no PII in captured records).
+
+**Gate (205 tests, all green):** `ruff` clean · `mypy --strict` clean (57 source files) · 205/205 tests pass offline in 2.3 s.
+
 ---
 
 ## What's next
-- **M6** MCP tool servers · **M7** eval harness wired as a CI gate · **M8** FastAPI + queue + checkpointing · **M9** observability · **M10–M11** Azure providers (Azure OpenAI, AI Search, Document Intelligence, Container Apps) + deploy.
-- **Demo cut line:** after M7 the system is a defensible, test-gated, offline-runnable showcase; M8–M11 make it production-grade on Azure.
+- **M10–M11** Azure providers (Azure OpenAI, AI Search, Document Intelligence, Container Apps, Azure Monitor OTel exporter) + deploy.
+- **Demo cut line:** M9 is now the cut line — every claim produces a complete, traceable, cost-accounted audit record; M10–M11 wire in the production Azure backend.
