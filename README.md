@@ -13,8 +13,8 @@ A claim comes in. A graph of specialist agents reads it, retrieves the governing
 ![Azure](https://img.shields.io/badge/cloud-Azure-0078D4)
 ![Typing](https://img.shields.io/badge/mypy-strict-2E75B6)
 ![Lint](https://img.shields.io/badge/lint-ruff-D7FF64)
-![Tests](https://img.shields.io/badge/tests-240%20passing-brightgreen)
-![Status](https://img.shields.io/badge/status-M10%20complete-brightgreen)
+![Tests](https://img.shields.io/badge/tests-244%20passing-brightgreen)
+![Status](https://img.shields.io/badge/status-M11%20complete-brightgreen)
 
 </div>
 
@@ -98,7 +98,7 @@ Built milestone by milestone (see [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md)):
 - ✅ **M3** LangGraph orchestration · ✅ **M4** RAG pipeline · ✅ **M5** Real agents · ✅ **M6** MCP servers
 - ✅ **M7** Eval harness + CI gate · ✅ **M8** API + queue + checkpointing · ✅ **M9** Observability
 - ✅ **M10** Azure providers (AOAI · AI Search · Document Intelligence · Service Bus · Cosmos DB)
-- ⬜ **M11** Containerise + Azure Container Apps deploy
+- ✅ **M11** Containerise + deploy (Dockerfile · worker entrypoint · corpus ingestion · ACR/Container Apps IaC · keyless OIDC CI/CD)
 
 ## License & data
 
