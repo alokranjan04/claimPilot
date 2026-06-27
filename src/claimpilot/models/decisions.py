@@ -53,8 +53,12 @@ class SettlementProposal(BaseModel):
 
     @model_validator(mode="after")
     def _payable_within_limit(self) -> "SettlementProposal":
-        """Payable amount must not exceed the policy limit."""
-        if self.payable_amount > self.limit_applied:
+        """Payable amount must not exceed the policy limit.
+
+        ``limit_applied = 0`` means "no explicit limit" (not "max payout is zero"),
+        so the check is skipped in that case.
+        """
+        if self.limit_applied > Decimal(0) and self.payable_amount > self.limit_applied:
             msg = (
                 f"payable_amount ({self.payable_amount}) "
                 f"exceeds limit_applied ({self.limit_applied})."

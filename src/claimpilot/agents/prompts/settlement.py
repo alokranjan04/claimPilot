@@ -19,8 +19,11 @@ Rules:
 Respond with a JSON object:
 - "payable_amount": string decimal (e.g. "4500.00")
 - "deductible_applied": string decimal
-- "limit_applied": string decimal
+- "limit_applied": string decimal — the policy's maximum payout for this claim.
+  If no explicit limit applies, set it to the claimed amount. Do NOT use "0"
+  unless coverage is genuinely zero (denied).
 - "breakdown": list of {"description": str, "amount": str decimal}
+  Use negative amounts for deductions (e.g. "-500.00" for a deductible).
 """
 
 
