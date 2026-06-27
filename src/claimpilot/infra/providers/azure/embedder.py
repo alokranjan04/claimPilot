@@ -25,25 +25,38 @@ class AzureOpenAIEmbedder:
         deployment: str = "text-embedding-3-small",
         api_version: str = "2024-02-01",
         dims: int = 1536,
+        api_key: str = "",
     ) -> None:
         try:
-            from azure.identity.aio import DefaultAzureCredential, get_bearer_token_provider
             from openai import AsyncAzureOpenAI
         except ImportError as exc:
             raise ImportError(
                 "Azure provider requires extra dependencies: uv sync --extra azure"
             ) from exc
 
-        credential = DefaultAzureCredential()
-        token_provider = get_bearer_token_provider(
-            credential, "https://cognitiveservices.azure.com/.default"
-        )
         # Any justified: openai SDK is untyped at the attribute level.
-        self._client: Any = AsyncAzureOpenAI(
-            azure_endpoint=endpoint,
-            azure_ad_token_provider=token_provider,
-            api_version=api_version,
-        )
+        if api_key:
+            self._client: Any = AsyncAzureOpenAI(
+                azure_endpoint=endpoint,
+                api_key=api_key,
+                api_version=api_version,
+            )
+        else:
+            try:
+                from azure.identity.aio import DefaultAzureCredential, get_bearer_token_provider
+            except ImportError as exc:
+                raise ImportError(
+                    "Azure provider requires extra dependencies: uv sync --extra azure"
+                ) from exc
+            credential = DefaultAzureCredential()
+            token_provider = get_bearer_token_provider(
+                credential, "https://cognitiveservices.azure.com/.default"
+            )
+            self._client = AsyncAzureOpenAI(
+                azure_endpoint=endpoint,
+                azure_ad_token_provider=token_provider,
+                api_version=api_version,
+            )
         self._deployment = deployment
         self._dims = dims
 

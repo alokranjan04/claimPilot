@@ -100,33 +100,40 @@ def _create_azure_providers(settings: Settings) -> ProviderSet:
             endpoint=settings.aoai_endpoint,
             deployment=settings.aoai_deployment_chat,
             api_version=settings.aoai_api_version,
+            api_key=settings.aoai_api_key,
         ),
         embedder=AzureOpenAIEmbedder(
             endpoint=settings.aoai_endpoint,
             deployment=settings.aoai_deployment_embedding,
             api_version=settings.aoai_api_version,
             dims=settings.embedding_dimensions,
+            api_key=settings.aoai_api_key,
         ),
         vector_store=AzureSearchVectorStore(
             endpoint=settings.azure_search_endpoint,
             index_name=settings.azure_search_index,
             embedding_dimensions=settings.embedding_dimensions,
+            api_key=settings.azure_search_api_key,
         ),
         doc_extractor=AzureDocumentIntelligenceExtractor(
             endpoint=settings.azure_docintel_endpoint,
+            api_key=settings.azure_docintel_api_key,
         ),
         queue=AzureServiceBusQueue(
             namespace=settings.azure_servicebus_namespace,
             queue_name=settings.azure_servicebus_queue,
+            connection_string=settings.azure_servicebus_connection_string,
         ),
         checkpointer=AzureCosmosCheckpointer(
             endpoint=settings.azure_cosmos_endpoint,
             database=settings.azure_cosmos_database,
             container=settings.azure_cosmos_container,
+            key=settings.azure_cosmos_key,
         ),
         reranker=AzureSearchReranker(
             endpoint=settings.azure_search_endpoint,
             index_name=settings.azure_search_index,
             semantic_config=settings.azure_search_semantic_config,
+            api_key=settings.azure_search_api_key,
         ),
     )

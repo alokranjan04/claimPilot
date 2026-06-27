@@ -28,25 +28,40 @@ class AzureOpenAILLMClient:
         endpoint: str,
         deployment: str,
         api_version: str = "2024-02-01",
+        api_key: str = "",
     ) -> None:
         try:
-            from azure.identity.aio import DefaultAzureCredential, get_bearer_token_provider
             from openai import AsyncAzureOpenAI
         except ImportError as exc:
             raise ImportError(
                 "Azure provider requires extra dependencies: uv sync --extra azure"
             ) from exc
 
-        credential = DefaultAzureCredential()
-        token_provider = get_bearer_token_provider(
-            credential, "https://cognitiveservices.azure.com/.default"
-        )
         # Any justified: openai SDK is untyped at the attribute level.
-        self._client: Any = AsyncAzureOpenAI(
-            azure_endpoint=endpoint,
-            azure_ad_token_provider=token_provider,
-            api_version=api_version,
-        )
+        if api_key:
+            # Local dev: use the API key directly — no identity credential needed.
+            self._client: Any = AsyncAzureOpenAI(
+                azure_endpoint=endpoint,
+                api_key=api_key,
+                api_version=api_version,
+            )
+        else:
+            # Production / CI: DefaultAzureCredential (Managed Identity, az login …).
+            try:
+                from azure.identity.aio import DefaultAzureCredential, get_bearer_token_provider
+            except ImportError as exc:
+                raise ImportError(
+                    "Azure provider requires extra dependencies: uv sync --extra azure"
+                ) from exc
+            credential = DefaultAzureCredential()
+            token_provider = get_bearer_token_provider(
+                credential, "https://cognitiveservices.azure.com/.default"
+            )
+            self._client = AsyncAzureOpenAI(
+                azure_endpoint=endpoint,
+                azure_ad_token_provider=token_provider,
+                api_version=api_version,
+            )
         self._deployment = deployment
 
     async def generate(

@@ -16,7 +16,9 @@ htmlcov/
 
 # Env & secrets — never commit
 .env
-.env.*
+.env.local
+.env.*.local
+# .env.example is intentionally NOT ignored (it's a committed template with no secrets)
 *.pem
 *.key
 secrets/

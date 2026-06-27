@@ -27,9 +27,14 @@ class AzureServiceBusQueue:
     The receiver is lazily created on first ``dequeue`` and kept alive.
     """
 
-    def __init__(self, *, namespace: str, queue_name: str) -> None:
+    def __init__(
+        self,
+        *,
+        namespace: str,
+        queue_name: str,
+        connection_string: str = "",
+    ) -> None:
         try:
-            from azure.identity.aio import DefaultAzureCredential
             from azure.servicebus.aio import ServiceBusClient
         except ImportError as exc:
             raise ImportError(
@@ -37,10 +42,21 @@ class AzureServiceBusQueue:
             ) from exc
 
         # Any justified: azure-servicebus SDK uses dynamic client factory.
-        self._sb_client: Any = ServiceBusClient(
-            fully_qualified_namespace=namespace,
-            credential=DefaultAzureCredential(),
-        )
+        if connection_string:
+            # Local dev: full connection string from the portal.
+            self._sb_client: Any = ServiceBusClient.from_connection_string(connection_string)
+        else:
+            # Production: DefaultAzureCredential (Managed Identity).
+            try:
+                from azure.identity.aio import DefaultAzureCredential
+            except ImportError as exc:
+                raise ImportError(
+                    "Azure provider requires extra dependencies: uv sync --extra azure"
+                ) from exc
+            self._sb_client = ServiceBusClient(
+                fully_qualified_namespace=namespace,
+                credential=DefaultAzureCredential(),
+            )
         self._queue_name = queue_name
         # Persistent receiver; created lazily on first dequeue.
         self._receiver: Any | None = None

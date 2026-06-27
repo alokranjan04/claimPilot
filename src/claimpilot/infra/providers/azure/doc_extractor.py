@@ -22,19 +22,20 @@ class AzureDocumentIntelligenceExtractor:
     averaged across all words and stored in metadata.
     """
 
-    def __init__(self, *, endpoint: str) -> None:
+    def __init__(self, *, endpoint: str, api_key: str = "") -> None:
         try:
             from azure.ai.documentintelligence.aio import DocumentIntelligenceClient
-            from azure.identity.aio import DefaultAzureCredential
         except ImportError as exc:
             raise ImportError(
                 "Azure provider requires extra dependencies: uv sync --extra azure"
             ) from exc
 
+        from claimpilot.infra.providers.azure._auth import get_credential
+
         # Any justified: azure-ai-documentintelligence SDK uses dynamic attrs.
         self._client: Any = DocumentIntelligenceClient(
             endpoint=endpoint,
-            credential=DefaultAzureCredential(),
+            credential=get_credential(api_key),
         )
 
     async def extract(self, content: bytes, *, content_type: str) -> ExtractedDocument:

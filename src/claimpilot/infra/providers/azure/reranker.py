@@ -30,20 +30,22 @@ class AzureSearchReranker:
         index_name: str,
         semantic_config: str = "claimpilot-semantic",
         vector_field: str = "embedding",
+        api_key: str = "",
     ) -> None:
         try:
-            from azure.identity.aio import DefaultAzureCredential
             from azure.search.documents.aio import SearchClient
         except ImportError as exc:
             raise ImportError(
                 "Azure provider requires extra dependencies: uv sync --extra azure"
             ) from exc
 
+        from claimpilot.infra.providers.azure._auth import get_credential
+
         # Any justified: azure-search-documents SDK has dynamic return types.
         self._client: Any = SearchClient(
             endpoint=endpoint,
             index_name=index_name,
-            credential=DefaultAzureCredential(),
+            credential=get_credential(api_key),
         )
         self._semantic_config = semantic_config
         self._vector_field = vector_field

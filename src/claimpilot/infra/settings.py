@@ -58,24 +58,35 @@ class Settings(BaseSettings):
     aoai_deployment_chat: str = "gpt-4o"
     aoai_deployment_embedding: str = "text-embedding-3-small"
     aoai_api_version: str = "2024-02-01"
+    # Optional: API key for local dev. If empty, DefaultAzureCredential is used.
+    # In production use Managed Identity (leave empty).
+    aoai_api_key: str = ""
 
     # --- Azure AI Search ------------------------------------------------------
     azure_search_endpoint: str = ""
     azure_search_index: str = "claimpilot-chunks"
     azure_search_semantic_config: str = "claimpilot-semantic"
+    # Optional: admin key for local dev. If empty, DefaultAzureCredential is used.
+    azure_search_api_key: str = ""
 
     # --- Azure Document Intelligence ------------------------------------------
     azure_docintel_endpoint: str = ""
+    # Optional: API key for local dev. If empty, DefaultAzureCredential is used.
+    azure_docintel_api_key: str = ""
 
     # --- Azure Service Bus ----------------------------------------------------
     # Fully-qualified namespace, e.g. mynamespace.servicebus.windows.net
     azure_servicebus_namespace: str = ""
     azure_servicebus_queue: str = "claims"
+    # Optional: full connection string for local dev (overrides namespace + credential).
+    azure_servicebus_connection_string: str = ""
 
     # --- Azure Cosmos DB ------------------------------------------------------
     azure_cosmos_endpoint: str = ""
     azure_cosmos_database: str = "claimpilot"
     azure_cosmos_container: str = "checkpoints"
+    # Optional: primary key for local dev. If empty, DefaultAzureCredential is used.
+    azure_cosmos_key: str = ""
 
     # --- Azure Monitor --------------------------------------------------------
     # Application Insights connection string (set via env / Key Vault at deploy).

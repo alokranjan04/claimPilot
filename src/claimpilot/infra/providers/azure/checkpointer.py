@@ -23,10 +23,16 @@ class AzureCosmosCheckpointer:
     ``delete`` is a no-op if the document has already been removed.
     """
 
-    def __init__(self, *, endpoint: str, database: str, container: str) -> None:
+    def __init__(
+        self,
+        *,
+        endpoint: str,
+        database: str,
+        container: str,
+        key: str = "",
+    ) -> None:
         try:
             from azure.cosmos.aio import CosmosClient
-            from azure.identity.aio import DefaultAzureCredential
         except ImportError as exc:
             raise ImportError(
                 "Azure provider requires extra dependencies: uv sync --extra azure"
@@ -34,10 +40,18 @@ class AzureCosmosCheckpointer:
 
         # Any justified: CosmosClient uses a fluent builder that mypy can't
         # fully type without the SDK installed.
-        self._cosmos: Any = CosmosClient(
-            url=endpoint,
-            credential=DefaultAzureCredential(),
-        )
+        if key:
+            # Local dev: primary key from the portal.
+            self._cosmos: Any = CosmosClient(url=endpoint, credential=key)
+        else:
+            # Production: DefaultAzureCredential (Managed Identity).
+            try:
+                from azure.identity.aio import DefaultAzureCredential
+            except ImportError as exc:
+                raise ImportError(
+                    "Azure provider requires extra dependencies: uv sync --extra azure"
+                ) from exc
+            self._cosmos = CosmosClient(url=endpoint, credential=DefaultAzureCredential())
         self._database_name = database
         self._container_name = container
         # Lazily resolved on first call.
