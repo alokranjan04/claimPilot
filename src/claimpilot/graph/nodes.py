@@ -27,7 +27,7 @@ from claimpilot.mcp_servers.fraud_signals import FraudSignalsServer
 from claimpilot.mcp_servers.regs import RegsServer
 from claimpilot.models.claim import ClaimFacts
 from claimpilot.models.common import Party
-from claimpilot.models.decisions import PolicyContext
+from claimpilot.models.decisions import ClauseText, PolicyContext
 from claimpilot.models.trace import StepTrace
 from claimpilot.observability.cost_meter import COST_PER_COMPLETION_TOKEN, COST_PER_PROMPT_TOKEN
 from claimpilot.rag.pipeline import RagPipeline
@@ -80,6 +80,7 @@ def intake(state: GraphState) -> dict[str, Any]:
         claimed_amount=amount,
         location="Springfield, IL",
         parties=[Party(name="Stub Claimant", role="claimant")],
+        extracted_fields={"fnol_narrative": raw.fnol_text},
     )
     trace = StepTrace(node="intake", inputs={"claim_id": raw.claim_id}, outputs=facts.model_dump())
     return {"facts": facts, "trace": [trace]}
@@ -108,6 +109,14 @@ def make_policy_retrieval_node(rag: RagPipeline):  # type: ignore[no-untyped-def
 
         # Map RetrievalResult → PolicyContext.
         citations = [ch.citation for ch in result.chunks]
+        clauses = [
+            ClauseText(
+                clause_id=ch.citation.clause_id,
+                document=ch.citation.document,
+                text=ch.text,
+            )
+            for ch in result.chunks
+        ]
         coverage_terms = list({ch.citation.document for ch in result.chunks})
         exclusions: list[str] = []
         for ch in result.chunks:
@@ -133,6 +142,7 @@ def make_policy_retrieval_node(rag: RagPipeline):  # type: ignore[no-untyped-def
             coverage_terms=coverage_terms or ["unknown"],
             exclusions=exclusions,
             citations=citations,
+            clauses=clauses,
             sufficient=result.sufficient,
         )
         trace = StepTrace(

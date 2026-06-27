@@ -41,9 +41,19 @@ Respond with a JSON object containing exactly these fields:
 
 def build_user_prompt(facts: ClaimFacts, context: PolicyContext) -> str:
     """Format claim facts and policy clauses into the user message."""
-    clauses_block = "\n\n".join(
-        f"[{c.clause_id}] ({c.document})\n{c.snippet}" for c in context.citations
-    )
+    # Prefer full clause text; fall back to citation snippets for back-compat.
+    if context.clauses:
+        clauses_block = "\n\n".join(
+            f"[{c.clause_id}] ({c.document})\n{c.text}" for c in context.clauses
+        )
+    else:
+        clauses_block = "\n\n".join(
+            f"[{c.clause_id}] ({c.document})\n{c.snippet}" for c in context.citations
+        )
+
+    extra = facts.extracted_fields or {}
+    narrative = extra.get("fnol_narrative", "")
+    narrative_line = f"- Claim narrative: {narrative}\n" if narrative else ""
 
     return (
         f"## Claim Facts\n"
@@ -51,8 +61,9 @@ def build_user_prompt(facts: ClaimFacts, context: PolicyContext) -> str:
         f"- Incident date: {facts.incident_date}\n"
         f"- Claimed amount: ${facts.claimed_amount}\n"
         f"- Location: {facts.location}\n"
-        f"- Parties: {', '.join(p.name + ' (' + p.role + ')' for p in facts.parties)}\n\n"
-        f"## Policy Clauses (use ONLY these)\n"
+        f"- Parties: {', '.join(p.name + ' (' + p.role + ')' for p in facts.parties)}\n"
+        f"{narrative_line}"
+        f"\n## Policy Clauses (use ONLY these)\n"
         f"Policy: {context.policy_id}\n"
         f"Coverage terms: {', '.join(context.coverage_terms)}\n"
         f"Exclusions: {', '.join(context.exclusions) or 'none listed'}\n\n"

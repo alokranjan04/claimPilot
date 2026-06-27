@@ -8,6 +8,19 @@ from pydantic import BaseModel, Field, model_validator
 from claimpilot.models.common import Citation, LineItem
 
 
+class ClauseText(BaseModel):
+    """Full text of a retrieved policy clause, used to ground the agents.
+
+    Separate from ``Citation`` (which keeps a short snippet for the audit
+    trail); this carries the COMPLETE clause text so the model isn't
+    reasoning over a truncated preview.
+    """
+
+    clause_id: str = Field(min_length=1)
+    document: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+
+
 class PolicyContext(BaseModel):
     """Relevant policy clauses and coverage terms retrieved by the Policy-RAG agent."""
 
@@ -15,6 +28,7 @@ class PolicyContext(BaseModel):
     coverage_terms: list[str] = Field(min_length=1)
     exclusions: list[str] = []
     citations: list[Citation] = Field(min_length=1)
+    clauses: list[ClauseText] = []  # full clause text for grounding
     sufficient: bool = True
 
 
