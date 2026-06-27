@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ClaimPilot — Claims Console</title>
+
+<!--
+  ClaimPilot Claims Console
+  -------------------------
+  Single-file React 18 + Babel-standalone + Tailwind (CDN) UI for the
+  ClaimPilot autonomous claims-adjudication API.
+
+  • Served from the SAME ORIGIN as the API, so every call uses a relative
+    path (/v1/...). No base URL, no CORS handling.
+  • Pure frontend, React hooks only.
+  • Robust to partial/missing fields while a claim is still processing.
+  • If the live API is unreachable (e.g. demoing this static file without the
+    backend wired up), a clearly-labelled DEMO simulator takes over so the
+    console is always screen-shareable. Real API responses always win.
+-->
+
+<!-- Tailwind (CDN, no build step) -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- React 18 + Babel standalone -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<!-- Inter -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+<script>
+  // Brand system -----------------------------------------------------------
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          brand: {
+            50:  '#ecf6f7',
+            100: '#d3e9ec',
+            200: '#a7d3d9',
+            300: '#6fb3bd',
+            400: '#3d8f9c',
+            500: '#1a7585',
+            600: '#0E5E6F', // primary
+            700: '#0c4e5c',
+            800: '#0c3f4a',
+            900: '#0b333c',
+          },
+          canvas: '#F6F8F9',
+        },
+        fontFamily: {
+          sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        },
+        borderRadius: { '2xl': '1rem', '3xl': '1.5rem' },
+        boxShadow: {
+          card: '0 1px 2px rgba(16,24,40,.04), 0 4px 16px -4px rgba(16,24,40,.08)',
+          cardhover: '0 2px 4px rgba(16,24,40,.06), 0 12px 28px -8px rgba(16,24,40,.14)',
+          glow: '0 0 0 4px rgba(14,94,111,.12)',
+        },
+        keyframes: {
+          fadeup: { '0%': { opacity: 0, transform: 'translateY(10px)' }, '100%': { opacity: 1, transform: 'translateY(0)' } },
+          fadein: { '0%': { opacity: 0 }, '100%': { opacity: 1 } },
+          shimmer: { '100%': { transform: 'translateX(100%)' } },
+          pulsering: { '0%': { boxShadow: '0 0 0 0 rgba(14,94,111,.45)' }, '70%': { boxShadow: '0 0 0 10px rgba(14,94,111,0)' }, '100%': { boxShadow: '0 0 0 0 rgba(14,94,111,0)' } },
+          grow: { '0%': { transform: 'scaleX(0)' }, '100%': { transform: 'scaleX(1)' } },
+        },
+        animation: {
+          fadeup: 'fadeup .5s cubic-bezier(.16,1,.3,1) both',
+          fadein: 'fadein .4s ease both',
+          shimmer: 'shimmer 1.6s infinite',
+          pulsering: 'pulsering 1.8s cubic-bezier(.66,0,0,1) infinite',
+        },
+      },
+    },
+  };
+</script>
+
+<style>
+  html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  body { font-feature-settings: 'cv05','ss01'; }
+  /* Comfortable, non-cramped baseline */
+  * { line-height: 1.5; }
+  ::selection { background: #d3e9ec; }
+  /* Custom scrollbar for the audit timeline / textareas */
+  .nice-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+  .nice-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; border: 3px solid transparent; background-clip: content-box; }
+  .nice-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; background-clip: content-box; }
+  /* Focus visibility (a11y) */
+  :focus-visible { outline: 2px solid #0E5E6F; outline-offset: 2px; border-radius: 6px; }
+  .meter-fill { transform-origin: left; transition: width .9s cubic-bezier(.16,1,.3,1); }
+  details > summary { list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+  }
+</style>
+</head>
+<body class="bg-canvas text-slate-800 font-sans">
+<template id="__bundler_thumbnail" data-bg-color="#0E5E6F">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#0E5E6F"/>
+    <g fill="none" stroke="#ffffff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M600 250l190 80v135c0 122-81 217-190 270-109-53-190-148-190-270V330l190-80z"/>
+      <path d="M520 470l55 55 110-110"/>
+    </g>
+  </svg>
+</template>
+<div id="root"></div>
+
+<!-- App source. Kept as text/plain so Babel's auto-runner ignores it; the
+     bootstrap below transforms it with the CLASSIC JSX runtime (emitting
+     React.createElement, which works with the UMD React global) and evaluates
+     it in a try/catch. Doing it ourselves keeps errors same-origin and
+     readable instead of the opaque cross-origin "Script error." the
+     auto-runner produces. -->
+<script type="text/plain" id="app-source">
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+/* =========================================================================
+   API LAYER  — all relative, same-origin (/v1/...)
+   Each call returns the parsed JSON. fetchJSON throws on non-2xx so callers
+   can decide whether to fall back to the demo simulator.
+   ========================================================================= */
+const API = {
+  async submit(policy_number, fnol_text) {
+    return fetchJSON('/v1/claims', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ policy_number, fnol_text }),
+    });
+  },
+  async get(id) {
+    return fetchJSON(`/v1/claims/${encodeURIComponent(id)}`);
+  },
+  async decide(id, decision, notes) {
+    return fetchJSON(`/v1/claims/${encodeURIComponent(id)}/decision`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision, notes }),
+    });
+  },
+  async evals() {
+    return fetchJSON('/v1/evals/latest');
+  },
+  streamURL(id) { return `/v1/claims/${encodeURIComponent(id)}/stream`; },
+};
+
+async function fetchJSON(url, opts) {
+  const res = await fetch(url, opts);
+  if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+  const ct = res.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) throw new Error(`Non-JSON response from ${url}`);
+  return res.json();
+}
+
+/* =========================================================================
+   PIPELINE DEFINITION
+   Canonical agent stages, in order. The backend trace[] entries are matched
+   to these by a normalized key so node-name variations still light up.
+   ========================================================================= */
+const STAGES = [
+  { key: 'intake',     label: 'Intake',           hint: 'Parse & validate FNOL' },
+  { key: 'policy',     label: 'Policy Retrieval', hint: 'Fetch policy & coverage docs' },
+  { key: 'coverage',   label: 'Coverage',         hint: 'Determine applicable coverage' },
+  { key: 'risk',       label: 'Fraud / Risk',     hint: 'Score fraud & risk signals' },
+  { key: 'settlement', label: 'Settlement',       hint: 'Compute payable amount' },
+  { key: 'compliance', label: 'Compliance',       hint: 'Regulatory checks' },
+  { key: 'router',     label: 'Router',           hint: 'Route auto vs. human' },
+  { key: 'outcome',    label: 'Outcome',          hint: 'Finalize disposition' },
+];
+const STAGE_ALIASES = {
+  intake: 'intake', fnol: 'intake', triage: 'intake',
+  policy: 'policy', policy_retrieval: 'policy', retrieval: 'policy', policyretrieval: 'policy',
+  coverage: 'coverage', cover: 'coverage',
+  risk: 'risk', fraud: 'risk', fraud_risk: 'risk', fraudrisk: 'risk', fraud_detection: 'risk',
+  settlement: 'settlement', settle: 'settlement', pricing: 'settlement', valuation: 'settlement',
+  compliance: 'compliance', regulatory: 'compliance',
+  router: 'router', routing: 'router', route: 'router',
+  outcome: 'outcome', disposition: 'outcome', decision: 'outcome', final: 'outcome',
+};
+function stageKeyFor(node) {
+  const n = String(node || '').toLowerCase().replace(/[^a-z]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+  if (STAGE_ALIASES[n]) return STAGE_ALIASES[n];
+  // try loose contains
+  for (const k of Object.keys(STAGE_ALIASES)) if (n.includes(k)) return STAGE_ALIASES[k];
+  return null;
+}
+
+/* =========================================================================
+   FORMAT HELPERS  — money values arrive as strings; keep them tidy.
+   ========================================================================= */
+function money(v) {
+  if (v === null || v === undefined || v === '') return '—';
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^0-9.\-]/g, ''));
+  if (isNaN(n)) return String(v);
+  return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+}
+function ms(v) {
+  if (v === null || v === undefined || v === '') return '—';
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  if (isNaN(n)) return String(v);
+  if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 1 : 2) + 's';
+  return Math.round(n) + 'ms';
+}
+function usd(v) {
+  if (v === null || v === undefined || v === '') return '—';
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  if (isNaN(n)) return String(v);
+  return '$' + n.toFixed(n < 0.1 ? 4 : n < 1 ? 3 : 2);
+}
+function pct(v) {
+  if (v === null || v === undefined || v === '') return '—';
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  if (isNaN(n)) return '—';
+  return Math.round((n <= 1 ? n * 100 : n)) + '%';
+}
+function clamp01(v) {
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  if (isNaN(n)) return 0;
+  return Math.max(0, Math.min(1, n > 1 ? n / 100 : n));
+}
+
+/* =========================================================================
+   DISPOSITION META
+   ========================================================================= */
+const DISPOSITIONS = {
+  auto_approved: { label: 'Auto-approved', icon: '✅', tone: 'emerald', blurb: 'Cleared for automated payout.' },
+  auto_denied:   { label: 'Denied',        icon: '⛔', tone: 'rose',    blurb: 'Claim denied per policy terms.' },
+  escalated:     { label: 'Escalated',     icon: '🧑‍⚖️', tone: 'amber',  blurb: 'Routed to a human adjuster for review.' },
+};
+const TONE = {
+  emerald: { text: 'text-emerald-700', bg: 'bg-emerald-50', ring: 'ring-emerald-200', solid: 'bg-emerald-500', soft: 'bg-emerald-100', bar: '#10b981', dot: 'bg-emerald-500' },
+  amber:   { text: 'text-amber-700',   bg: 'bg-amber-50',   ring: 'ring-amber-200',   solid: 'bg-amber-500',   soft: 'bg-amber-100',   bar: '#f59e0b', dot: 'bg-amber-500' },
+  rose:    { text: 'text-rose-700',    bg: 'bg-rose-50',    ring: 'ring-rose-200',    solid: 'bg-rose-500',    soft: 'bg-rose-100',    bar: '#f43f5e', dot: 'bg-rose-500' },
+  brand:   { text: 'text-brand-700',   bg: 'bg-brand-50',   ring: 'ring-brand-200',   solid: 'bg-brand-600',   soft: 'bg-brand-100',   bar: '#0E5E6F', dot: 'bg-brand-600' },
+  slate:   { text: 'text-slate-600',   bg: 'bg-slate-50',   ring: 'ring-slate-200',   solid: 'bg-slate-400',   soft: 'bg-slate-100',   bar: '#64748b', dot: 'bg-slate-400' },
+};
+
+/* =========================================================================
+   SAMPLE CLAIMS (one-click chips on Submit)
+   ========================================================================= */
+const SAMPLES = [
+  {
+    tag: 'Auto · Rear-end',
+    policy: 'AUTO-4471-2298',
+    text: `Insured was stopped at a red light on Cedar St when a second vehicle failed to brake and struck the rear bumper. Visible damage to rear quarter panel and trunk. No injuries reported. Police report #PD-22841 filed at scene. Photos attached.`,
+  },
+  {
+    tag: 'Home · Water damage',
+    policy: 'HOME-8810-0034',
+    text: `Burst pipe under kitchen sink overnight flooded the kitchen and adjacent hallway. Hardwood flooring buckled, lower cabinets water-logged. Insured shut off main and called a plumber. Estimated remediation in progress; mitigation receipts pending.`,
+  },
+  {
+    tag: 'Auto · Theft',
+    policy: 'AUTO-2210-7765',
+    text: `Vehicle reported stolen from an apartment parking garage between 11pm and 6am. No glass found on the ground. Spare key reportedly still in insured's possession. Last serviced two weeks ago. Police report filed, reference TH-99120.`,
+  },
+  {
+    tag: 'Property · Hail',
+    policy: 'HOME-5523-1190',
+    text: `Severe hailstorm on the 14th caused dents across the roof and two cracked skylights. Neighbors filed similar claims. Roofer inspection notes granule loss consistent with storm date. Requesting coverage for roof replacement and skylight repair.`,
+  },
+];
+
+/* =========================================================================
+   DEMO SIMULATOR
+   Used ONLY when the live API is unreachable. Produces a realistic claim that
+   reveals its trace over time, so the console is always demoable. The shape
+   matches the documented GET /v1/claims/{id} contract exactly.
+   ========================================================================= */
+function buildDemoClaim(policy_number, fnol_text) {
+  const lower = (fnol_text || '').toLowerCase();
+  let kind = 'auto_approved';
+  if (lower.includes('stolen') || lower.includes('theft') || lower.includes('spare key')) kind = 'escalated';
+  else if (lower.includes('hail') || lower.includes('roof')) kind = 'auto_approved';
+  else if (lower.includes('flood') && lower.includes('exclu')) kind = 'auto_denied';
+
+  const presets = {
+    auto_approved: {
+      disposition: 'auto_approved',
+      coverage: { decision: 'Covered', confidence: 0.94, rationale: 'Collision coverage applies to the described rear-impact event. Deductible and limits verified against the active policy.', citations: [
+        { clause_id: 'COLL-3.1', document: 'Auto Policy — Part C', snippet: 'We will pay for direct and accidental loss to a covered auto caused by collision, less the applicable deductible.' },
+        { clause_id: 'DED-1.2', document: 'Declarations Page', snippet: 'Collision deductible: $500 per occurrence.' },
+      ] },
+      risk: { score: 0.12, signals: ['Police report on file (PD-22841)', 'Consistent damage geometry', 'No prior at-fault claims in 36 months'], recommendation: 'Low fraud risk — proceed with automated settlement.' },
+      settlement: { payable_amount: '4380.00', deductible_applied: '500.00', limit_applied: '25000.00', breakdown: [
+        { description: 'Rear quarter panel replacement', amount: '2150.00' },
+        { description: 'Trunk lid & alignment', amount: '1480.00' },
+        { description: 'Paint & refinish', amount: '1250.00' },
+        { description: 'Less: collision deductible', amount: '-500.00' },
+      ] },
+      compliance: { passed: true, violations: [], rationale: 'Unfair Claims Settlement Practices checks passed. Disclosure and timing requirements satisfied.' },
+    },
+    escalated: {
+      disposition: 'escalated',
+      coverage: { decision: 'Likely covered — pending verification', confidence: 0.61, rationale: 'Comprehensive theft coverage applies, but recovery indicators and key custody require human verification before payout.', citations: [
+        { clause_id: 'COMP-2.4', document: 'Auto Policy — Part D', snippet: 'Comprehensive covers loss to a covered auto not caused by collision, including theft.' },
+        { clause_id: 'DUTY-5.1', document: 'Conditions', snippet: 'Insured must cooperate and provide all reasonably requested documentation.' },
+      ] },
+      risk: { score: 0.58, signals: ['No forced-entry evidence noted', 'Spare key reportedly retained by insured', 'Recent service activity', 'Overnight loss window'], recommendation: 'Elevated risk — refer to SIU / human adjuster before disbursement.' },
+      settlement: { payable_amount: '0.00', deductible_applied: '1000.00', limit_applied: '32000.00', breakdown: [
+        { description: 'Actual cash value (pending appraisal)', amount: '0.00' },
+        { description: 'Comprehensive deductible', amount: '-1000.00' },
+      ] },
+      compliance: { passed: true, violations: [], advisories: ['Document SIU referral rationale in file'], rationale: 'No violations. Advisory: record investigative basis to satisfy good-faith handling standards.' },
+    },
+    auto_denied: {
+      disposition: 'auto_denied',
+      coverage: { decision: 'Not covered', confidence: 0.88, rationale: 'The described loss falls under the flood exclusion; no rider or endorsement extends coverage.', citations: [
+        { clause_id: 'EXCL-7.2', document: 'Homeowners Policy — Exclusions', snippet: 'We do not cover loss caused by flood, surface water, or overflow of a body of water.' },
+      ] },
+      risk: { score: 0.21, signals: ['Loss cause consistent with excluded peril', 'No endorsement on file'], recommendation: 'Standard denial — no fraud indicators.' },
+      settlement: { payable_amount: '0.00', deductible_applied: '0.00', limit_applied: '0.00', breakdown: [ { description: 'Excluded peril — no payable amount', amount: '0.00' } ] },
+      compliance: { passed: true, violations: [], rationale: 'Denial rationale and citations meet adverse-action disclosure requirements.' },
+    },
+  };
+  const p = presets[kind];
+  // Per-node latency / cost (realistic small values)
+  const traceTemplate = [
+    { node: 'intake',     latency_ms: 180,  cost_usd: 0.0009 },
+    { node: 'policy',     latency_ms: 420,  cost_usd: 0.0021 },
+    { node: 'coverage',   latency_ms: 980,  cost_usd: 0.0064 },
+    { node: 'risk',       latency_ms: 760,  cost_usd: 0.0052 },
+    { node: 'settlement', latency_ms: 540,  cost_usd: 0.0038 },
+    { node: 'compliance', latency_ms: 610,  cost_usd: 0.0044 },
+    { node: 'router',     latency_ms: 150,  cost_usd: 0.0008 },
+    { node: 'outcome',    latency_ms: 120,  cost_usd: 0.0006 },
+  ];
+  return { kind, presets: p, traceTemplate };
+}
+
+/* =========================================================================
+   ROOT APP
+   ========================================================================= */
+function App() {
+  const [tab, setTab] = useState('submit');
+  const [claimId, setClaimId] = useState(null);
+  const [claim, setClaim] = useState(null);        // full GET response
+  const [phase, setPhase] = useState('idle');      // idle | submitting | processing | done | error
+  const [error, setError] = useState(null);
+  const [demoMode, setDemoMode] = useState(false);
+
+  const demoRef = useRef(null);     // holds simulator state + timers
+  const pollRef = useRef(null);
+  const esRef = useRef(null);
+
+  const disposition = claim && claim.disposition ? claim.disposition : null;
+  const isEscalated = (claim && claim.status === 'escalated') || disposition === 'escalated';
+
+  // --- cleanup helpers ---
+  const stopWatchers = useCallback(() => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (esRef.current) { try { esRef.current.close(); } catch (e) {} esRef.current = null; }
+    if (demoRef.current && demoRef.current.timers) { demoRef.current.timers.forEach(clearTimeout); demoRef.current.timers = []; }
+  }, []);
+
+  useEffect(() => () => stopWatchers(), [stopWatchers]);
+
+  // ---------------------------------------------------------------------
+  // Submit
+  // ---------------------------------------------------------------------
+  const submitClaim = useCallback(async (policy_number, fnol_text) => {
+    stopWatchers();
+    setError(null);
+    setClaim(null);
+    setPhase('submitting');
+    setTab('live');
+    try {
+      const res = await API.submit(policy_number, fnol_text);
+      const id = res.claim_id;
+      setClaimId(id);
+      setDemoMode(false);
+      setClaim({ status: res.status || 'pending', trace: [] });
+      setPhase('processing');
+      startWatchers(id);
+    } catch (e) {
+      // ---- Fall back to demo simulator ----
+      console.warn('Live API unavailable, using demo simulator:', e.message);
+      setDemoMode(true);
+      const id = 'DEMO-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+      setClaimId(id);
+      setPhase('processing');
+      startDemo(id, policy_number, fnol_text);
+    }
+  }, [stopWatchers]);
+
+  // ---------------------------------------------------------------------
+  // Live watchers (real API): SSE for trace + GET as source of truth
+  // ---------------------------------------------------------------------
+  const refreshOnce = useCallback(async (id) => {
+    try {
+      const data = await API.get(id);
+      setClaim(data);
+      if (data.status === 'completed' || data.status === 'escalated') {
+        setPhase('done');
+        stopWatchers();
+      }
+      return data;
+    } catch (e) {
+      // transient — keep polling, but surface if it persists handled by caller
+      throw e;
+    }
+  }, [stopWatchers]);
+
+  const startWatchers = useCallback((id) => {
+    let failures = 0;
+    // Source of truth: poll GET every 1.5s
+    const poll = async () => {
+      try { await refreshOnce(id); failures = 0; }
+      catch (e) { failures += 1; if (failures >= 5) { setError('Lost connection to the adjudication service.'); setPhase('error'); stopWatchers(); } }
+    };
+    poll();
+    pollRef.current = setInterval(poll, 1500);
+
+    // Enhancement: SSE stream lights nodes faster as they complete.
+    try {
+      const es = new EventSource(API.streamURL(id));
+      es.onmessage = () => { refreshOnce(id).catch(() => {}); };
+      es.onerror = () => { try { es.close(); } catch (e) {} esRef.current = null; };
+      esRef.current = es;
+    } catch (e) { /* polling already covers us */ }
+  }, [refreshOnce, stopWatchers]);
+
+  // ---------------------------------------------------------------------
+  // Demo simulator: reveal trace node-by-node, then settle disposition
+  // ---------------------------------------------------------------------
+  const startDemo = useCallback((id, policy_number, fnol_text) => {
+    const sim = buildDemoClaim(policy_number, fnol_text);
+    demoRef.current = { timers: [] };
+    const revealed = [];
+    setClaim({ status: 'processing', trace: [] });
+
+    sim.traceTemplate.forEach((step, i) => {
+      const t = setTimeout(() => {
+        revealed.push({ ...step });
+        const done = revealed.length === sim.traceTemplate.length;
+        const total_latency = revealed.reduce((a, s) => a + s.latency_ms, 0);
+        const total_cost = revealed.reduce((a, s) => a + s.cost_usd, 0);
+        const partial = {
+          status: done ? (sim.presets.disposition === 'escalated' ? 'escalated' : 'completed') : 'processing',
+          disposition: done ? sim.presets.disposition : null,
+          trace: revealed.map(s => ({ ...s })),
+          cost_summary: { total_cost_usd: total_cost.toFixed(4), total_latency_ms: total_latency },
+        };
+        // Reveal card data progressively as the relevant node completes
+        if (revealed.some(s => stageKeyFor(s.node) === 'coverage')) partial.coverage = sim.presets.coverage;
+        if (revealed.some(s => stageKeyFor(s.node) === 'risk')) partial.risk = sim.presets.risk;
+        if (revealed.some(s => stageKeyFor(s.node) === 'settlement')) partial.settlement = sim.presets.settlement;
+        if (revealed.some(s => stageKeyFor(s.node) === 'compliance')) partial.compliance = sim.presets.compliance;
+        partial.policy_number = policy_number;
+        setClaim(partial);
+        if (done) setPhase('done');
+      }, 650 + i * 820);
+      demoRef.current.timers.push(t);
+    });
+  }, []);
+
+  // ---------------------------------------------------------------------
+  // Human decision (escalated claims)
+  // ---------------------------------------------------------------------
+  const submitDecision = useCallback(async (decision, notes) => {
+    if (demoMode) {
+      // Simulate the decision endpoint locally
+      setClaim(c => ({
+        ...c,
+        status: 'completed',
+        disposition: decision === 'approve' ? 'auto_approved' : 'auto_denied',
+        human_decision: { decision, notes, decided_at: new Date().toISOString(), decided_by: 'You (demo)' },
+        settlement: decision === 'deny'
+          ? { ...(c.settlement || {}), payable_amount: '0.00', breakdown: [{ description: 'Denied on human review', amount: '0.00' }] }
+          : { ...(c.settlement || {}), payable_amount: c.settlement && c.settlement.limit_applied ? '4380.00' : (c.settlement ? c.settlement.payable_amount : '0.00'),
+              breakdown: (c.settlement && c.settlement.breakdown && c.settlement.breakdown.length > 1) ? c.settlement.breakdown : [
+                { description: 'Approved on human review', amount: '4880.00' },
+                { description: 'Less: deductible', amount: '-500.00' },
+              ] },
+      }));
+      return { ok: true };
+    }
+    const res = await API.decide(claimId, decision, notes);
+    // Re-poll to reflect the updated disposition
+    try { await refreshOnce(claimId); } catch (e) {}
+    return res;
+  }, [claimId, demoMode, refreshOnce]);
+
+  const reset = useCallback(() => {
+    stopWatchers();
+    setClaim(null); setClaimId(null); setPhase('idle'); setError(null); setDemoMode(false);
+    setTab('submit');
+  }, [stopWatchers]);
+
+  // Auto-advance to Decision when done
+  const prevPhase = useRef(phase);
+  useEffect(() => {
+    if (prevPhase.current !== 'done' && phase === 'done') {
+      const t = setTimeout(() => setTab('decision'), 700);
+      return () => clearTimeout(t);
+    }
+    prevPhase.current = phase;
+  }, [phase]);
+
+  const tabs = useMemo(() => {
+    const base = [
+      { id: 'submit', label: 'Submit' },
+      { id: 'live', label: 'Live', disabled: !claimId },
+      { id: 'decision', label: 'Decision', disabled: !(claim && claim.disposition) },
+    ];
+    if (isEscalated) base.push({ id: 'review', label: 'Human Review', badge: true });
+    base.push({ id: 'evals', label: 'Evals' });
+    return base;
+  }, [claimId, claim, isEscalated]);
+
+  return (
+    <div className="min-h-screen flex flex-col">
+      <TopBar tab={tab} setTab={setTab} tabs={tabs} demoMode={demoMode} onReset={reset} hasClaim={!!claimId} />
+
+      <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
+        {tab === 'submit' && <SubmitView onSubmit={submitClaim} phase={phase} />}
+        {tab === 'live' && <LiveView claim={claim} phase={phase} error={error} demoMode={demoMode} onGoDecision={() => setTab('decision')} />}
+        {tab === 'decision' && <DecisionView claim={claim} phase={phase} isEscalated={isEscalated} onReview={() => setTab('review')} />}
+        {tab === 'review' && <ReviewView claim={claim} onDecide={submitDecision} onDone={() => setTab('decision')} />}
+        {tab === 'evals' && <EvalsView demoMode={demoMode} />}
+      </main>
+
+      <footer className="border-t border-slate-200/70 bg-white/60">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between text-xs text-slate-400">
+          <span>ClaimPilot · Autonomous Claims Adjudication</span>
+          <span>{demoMode ? 'Demo data' : 'Live API'}</span>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+/* =========================================================================
+   TOP BAR + TABS
+   ========================================================================= */
+function TopBar({ tab, setTab, tabs, demoMode, onReset, hasClaim }) {
+  return (
+    <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200/70">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="h-16 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-9 w-9 rounded-xl bg-brand-600 text-white grid place-items-center shadow-card shrink-0" aria-hidden="true">
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
+            </div>
+            <div className="min-w-0">
+              <div className="font-bold text-slate-900 leading-tight tracking-tight flex items-center gap-2">
+                ClaimPilot
+                {demoMode && <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700">Demo</span>}
+              </div>
+              <div className="text-xs text-slate-400 leading-tight">Claims Console</div>
+            </div>
+          </div>
+
+          <nav className="hidden md:flex items-center gap-1" aria-label="Sections">
+            {tabs.map(t => (
+              <button
+                key={t.id}
+                onClick={() => !t.disabled && setTab(t.id)}
+                disabled={t.disabled}
+                aria-current={tab === t.id ? 'page' : undefined}
+                className={[
+                  'relative px-3.5 py-2 rounded-xl text-sm font-medium transition-colors',
+                  t.disabled ? 'text-slate-300 cursor-not-allowed' :
+                  tab === t.id ? 'text-brand-700 bg-brand-50' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50',
+                ].join(' ')}
+              >
+                {t.label}
+                {t.badge && <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-white animate-pulsering" />}
+              </button>
+            ))}
+          </nav>
+
+          <div className="flex items-center gap-2">
+            {hasClaim && (
+              <button onClick={onReset} className="text-sm font-medium text-slate-500 hover:text-brand-700 px-3 py-2 rounded-xl hover:bg-slate-50 transition-colors">
+                New claim
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Mobile tabs */}
+        <nav className="md:hidden flex items-center gap-1 overflow-x-auto pb-2 -mx-1 px-1 nice-scroll" aria-label="Sections">
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => !t.disabled && setTab(t.id)} disabled={t.disabled}
+              aria-current={tab === t.id ? 'page' : undefined}
+              className={['shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                t.disabled ? 'text-slate-300' : tab === t.id ? 'text-brand-700 bg-brand-50' : 'text-slate-500'].join(' ')}>
+              {t.label}{t.badge && <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />}
+            </button>
+          ))}
+        </nav>
+      </div>
+    </header>
+  );
+}
+
+/* =========================================================================
+   SUBMIT VIEW
+   ========================================================================= */
+function SubmitView({ onSubmit, phase }) {
+  const [policy, setPolicy] = useState('');
+  const [text, setText] = useState('');
+  const submitting = phase === 'submitting';
+  const canSubmit = policy.trim() && text.trim() && !submitting;
+
+  const useSample = (s) => { setPolicy(s.policy); setText(s.text); };
+
+  return (
+    <div className="animate-fadeup">
+      <div className="mb-8 max-w-2xl">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">New claim</h1>
+        <p className="mt-2 text-slate-500 leading-relaxed">
+          Submit a First Notice of Loss. ClaimPilot's agents will retrieve the policy, determine coverage,
+          assess fraud risk, compute a settlement, and run compliance checks — end to end.
+        </p>
+      </div>
+
+      <form
+        onSubmit={(e) => { e.preventDefault(); if (canSubmit) onSubmit(policy.trim(), text.trim()); }}
+        className="grid lg:grid-cols-3 gap-6"
+      >
+        <div className="lg:col-span-2 space-y-5">
+          <div className="bg-white rounded-2xl shadow-card border border-slate-200/60 p-6 sm:p-7">
+            <label htmlFor="policy" className="block text-sm font-semibold text-slate-700">Policy number</label>
+            <input
+              id="policy" value={policy} onChange={e => setPolicy(e.target.value)}
+              placeholder="e.g. AUTO-4471-2298" autoComplete="off"
+              className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-brand-400 focus:ring-4 focus:ring-brand-600/10 outline-none transition-all"
+            />
+
+            <label htmlFor="fnol" className="block text-sm font-semibold text-slate-700 mt-6">First Notice of Loss</label>
+            <textarea
+              id="fnol" value={text} onChange={e => setText(e.target.value)} rows={9}
+              placeholder="Describe what happened — parties involved, date, damages, any reports or photos…"
+              className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-slate-900 placeholder:text-slate-400 leading-relaxed resize-y nice-scroll focus:bg-white focus:border-brand-400 focus:ring-4 focus:ring-brand-600/10 outline-none transition-all"
+            />
+            <div className="mt-1.5 text-xs text-slate-400">{text.trim().length} characters</div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <button
+              type="submit" disabled={!canSubmit}
+              className={['inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl font-semibold text-white shadow-card transition-all',
+                canSubmit ? 'bg-brand-600 hover:bg-brand-700 hover:shadow-cardhover active:scale-[.99]' : 'bg-slate-300 cursor-not-allowed'].join(' ')}
+            >
+              {submitting ? (
+                <><Spinner /> Submitting…</>
+              ) : (
+                <>Adjudicate
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                </>
+              )}
+            </button>
+            <p className="text-xs text-slate-400 sm:max-w-xs">Average adjudication completes in under 7 seconds across 8 agent stages.</p>
+          </div>
+        </div>
+
+        {/* Sample chips */}
+        <aside className="lg:col-span-1">
+          <div className="bg-white rounded-2xl shadow-card border border-slate-200/60 p-6">
+            <div className="text-sm font-semibold text-slate-700">Try a sample claim</div>
+            <p className="text-xs text-slate-400 mt-1 mb-4">One click fills the form with a realistic FNOL.</p>
+            <div className="grid gap-2.5">
+              {SAMPLES.map((s, i) => (
+                <button key={i} type="button" onClick={() => useSample(s)}
+                  className="group text-left rounded-xl border border-slate-200 hover:border-brand-300 hover:bg-brand-50/50 px-4 py-3 transition-all">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-slate-800 group-hover:text-brand-700">{s.tag}</span>
+                    <svg viewBox="0 0 24 24" className="h-4 w-4 text-slate-300 group-hover:text-brand-500 transition-colors" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                  </div>
+                  <div className="text-xs text-slate-400 mt-0.5 font-mono">{s.policy}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </aside>
+      </form>
+    </div>
+  );
+}
+
+/* =========================================================================
+   LIVE VIEW — agent pipeline stepper
+   ========================================================================= */
+function LiveView({ claim, phase, error, demoMode, onGoDecision }) {
+  // Build node-state map from the growing trace
+  const traceByStage = useMemo(() => {
+    const m = {};
+    (claim && claim.trace ? claim.trace : []).forEach(t => {
+      const k = stageKeyFor(t.node);
+      if (k) m[k] = t;
+    });
+    return m;
+  }, [claim]);
+
+  const doneCount = STAGES.filter(s => traceByStage[s.key]).length;
+  const activeIdx = phase === 'done' ? STAGES.length : doneCount; // next pending node = active
+  const totalCost = claim && claim.cost_summary ? claim.cost_summary.total_cost_usd : null;
+  const totalLat = claim && claim.cost_summary ? claim.cost_summary.total_latency_ms : null;
+
+  if (error && phase === 'error') {
+    return <ErrorState title="Adjudication interrupted" message={error} />;
+  }
+
+  return (
+    <div className="animate-fadeup">
+      <div className="flex flex-wrap items-end justify-between gap-4 mb-7">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Live adjudication</h1>
+            {phase !== 'done' && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 bg-brand-50 px-2.5 py-1 rounded-full">
+                <span className="h-1.5 w-1.5 rounded-full bg-brand-600 animate-pulse" /> Processing
+              </span>
+            )}
+            {phase === 'done' && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Complete
+              </span>
+            )}
+          </div>
+          <p className="mt-1.5 text-slate-500">
+            {claim && claim.policy_number ? <>Policy <span className="font-mono text-slate-600">{claim.policy_number}</span> · </> : null}
+            {doneCount} of {STAGES.length} stages complete
+          </p>
+        </div>
+        <div className="flex items-center gap-6">
+          <Metric label="Latency" value={ms(totalLat)} />
+          <Metric label="Cost" value={usd(totalCost)} />
+          {phase === 'done' && (
+            <button onClick={onGoDecision} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 shadow-card transition-colors">
+              View decision
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-card border border-slate-200/60 p-5 sm:p-7">
+        <ol className="space-y-1">
+          {STAGES.map((stage, i) => {
+            const t = traceByStage[stage.key];
+            const status = t ? 'done' : (i === activeIdx && phase !== 'done' ? 'active' : 'pending');
+            return <PipelineNode key={stage.key} stage={stage} status={status} trace={t} isLast={i === STAGES.length - 1} index={i} />;
+          })}
+        </ol>
+      </div>
+
+      {demoMode && (
+        <p className="mt-4 text-xs text-slate-400 flex items-center gap-1.5">
+          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01" strokeLinecap="round"/></svg>
+          Live API not detected — showing a simulated adjudication so you can explore the console.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PipelineNode({ stage, status, trace, isLast, index }) {
+  const isDone = status === 'done';
+  const isActive = status === 'active';
+  return (
+    <li className="relative flex gap-4 group">
+      {/* connector */}
+      {!isLast && (
+        <span className={['absolute left-[18px] top-10 bottom-[-4px] w-0.5 rounded transition-colors duration-500',
+          isDone ? 'bg-brand-200' : 'bg-slate-150 bg-slate-100'].join(' ')} aria-hidden="true" />
+      )}
+      {/* node dot */}
+      <div className="relative shrink-0 pt-0.5">
+        <div className={[
+          'h-9 w-9 rounded-full grid place-items-center text-sm font-semibold transition-all duration-500',
+          isDone ? 'bg-brand-600 text-white shadow-card' :
+          isActive ? 'bg-white text-brand-700 ring-2 ring-brand-500 animate-pulsering' :
+          'bg-slate-100 text-slate-400 ring-1 ring-slate-200',
+        ].join(' ')}>
+          {isDone ? (
+            <svg viewBox="0 0 24 24" className="h-4 w-4 animate-fadein" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L20 7"/></svg>
+          ) : isActive ? (
+            <Spinner small />
+          ) : (
+            index + 1
+          )}
+        </div>
+      </div>
+
+      {/* content */}
+      <div className={['flex-1 min-w-0 py-1.5 pb-5 transition-opacity duration-500', status === 'pending' ? 'opacity-50' : 'opacity-100'].join(' ')}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className={['font-semibold transition-colors', isDone ? 'text-slate-900' : isActive ? 'text-brand-700' : 'text-slate-500'].join(' ')}>
+              {stage.label}
+            </div>
+            <div className="text-sm text-slate-400">{isActive ? 'Working…' : stage.hint}</div>
+          </div>
+          {isDone && trace && (
+            <div className="flex items-center gap-4 text-right animate-fadein">
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-slate-400 font-medium">Latency</div>
+                <div className="text-sm font-semibold text-slate-700 tabular-nums">{ms(trace.latency_ms)}</div>
+              </div>
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-slate-400 font-medium">Cost</div>
+                <div className="text-sm font-semibold text-slate-700 tabular-nums">{usd(trace.cost_usd)}</div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+}
+
+/* =========================================================================
+   DECISION VIEW
+   ========================================================================= */
+function DecisionView({ claim, phase, isEscalated, onReview }) {
+  if (!claim) return <EmptyState title="No decision yet" message="Submit a claim to see the adjudication outcome here." />;
+  const disp = claim.disposition;
+  if (!disp) {
+    return <DecisionSkeleton />;
+  }
+  const meta = DISPOSITIONS[disp] || DISPOSITIONS.escalated;
+  const tone = TONE[meta.tone];
+  const cs = claim.cost_summary || {};
+
+  return (
+    <div className="animate-fadeup space-y-6">
+      {/* HERO */}
+      <section className={['rounded-3xl border p-7 sm:p-9 shadow-card relative overflow-hidden', tone.bg, tone.ring, 'ring-1'].join(' ')}>
+        <div className="relative flex flex-col sm:flex-row sm:items-center gap-6 justify-between">
+          <div className="flex items-start gap-5">
+            <div className={['h-16 w-16 rounded-2xl grid place-items-center text-3xl bg-white shadow-card shrink-0'].join(' ')} aria-hidden="true">
+              {meta.icon}
+            </div>
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Disposition</div>
+              <h1 className={['text-3xl sm:text-4xl font-extrabold tracking-tight mt-0.5', tone.text].join(' ')}>{meta.label}</h1>
+              <p className="text-slate-500 mt-1.5 max-w-md">{meta.blurb}</p>
+            </div>
+          </div>
+          <div className="flex items-stretch gap-3 sm:gap-5">
+            <HeroStat label="Payable" value={money(claim.settlement && claim.settlement.payable_amount)} big tone={tone} />
+            <div className="hidden sm:flex flex-col justify-center gap-3 pl-5 border-l border-slate-200/70">
+              <HeroStat label="Total cost" value={usd(cs.total_cost_usd)} />
+              <HeroStat label="Total latency" value={ms(cs.total_latency_ms)} />
+            </div>
+          </div>
+        </div>
+        {isEscalated && (
+          <div className="relative mt-6 flex flex-col sm:flex-row sm:items-center gap-3 justify-between rounded-2xl bg-white/70 border border-amber-200 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <span className="text-xl">🧑‍⚖️</span>
+              <p className="text-sm text-amber-800 font-medium">This claim needs a human adjuster's decision before it can be settled.</p>
+            </div>
+            <button onClick={onReview} className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 transition-colors">
+              Open review packet
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+        )}
+        {claim.human_decision && (
+          <div className="relative mt-6 rounded-2xl bg-white/70 border border-slate-200 px-5 py-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Human decision</div>
+            <p className="text-sm text-slate-700 mt-1">
+              <span className="font-semibold capitalize">{claim.human_decision.decision}</span>
+              {claim.human_decision.decided_by ? <> by {claim.human_decision.decided_by}</> : null}
+              {claim.human_decision.notes ? <> — “{claim.human_decision.notes}”</> : null}
+            </p>
+          </div>
+        )}
+      </section>
+
+      {/* DETAIL CARDS */}
+      <div className="grid lg:grid-cols-2 gap-6">
+        <CoverageCard coverage={claim.coverage} />
+        <RiskCard risk={claim.risk} />
+        <SettlementCard settlement={claim.settlement} />
+        <ComplianceCard compliance={claim.compliance} />
+      </div>
+
+      <AuditTrace trace={claim.trace} cost={claim.cost_summary} />
+    </div>
+  );
+}
+
+function HeroStat({ label, value, big, tone }) {
+  return (
+    <div className="text-right sm:text-left">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{label}</div>
+      <div className={[big ? 'text-3xl sm:text-4xl font-extrabold tracking-tight' : 'text-lg font-bold', big && tone ? tone.text : 'text-slate-800', 'tabular-nums leading-tight mt-0.5'].join(' ')}>{value}</div>
+    </div>
+  );
+}
+
+/* ---- Card shell ---- */
+function Card({ title, icon, accent, children, right }) {
+  const tone = TONE[accent] || TONE.brand;
+  return (
+    <section className="bg-white rounded-2xl shadow-card border border-slate-200/60 p-6 hover:shadow-cardhover transition-shadow">
+      <header className="flex items-center justify-between gap-3 mb-5">
+        <div className="flex items-center gap-3">
+          <div className={['h-9 w-9 rounded-xl grid place-items-center', tone.soft, tone.text].join(' ')} aria-hidden="true">{icon}</div>
+          <h2 className="font-bold text-slate-900">{title}</h2>
+        </div>
+        {right}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function CoverageCard({ coverage }) {
+  if (!coverage) return <CardSkeleton title="Coverage" />;
+  const conf = clamp01(coverage.confidence);
+  return (
+    <Card title="Coverage" accent="brand" icon={<svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/></svg>}
+      right={<span className="text-sm font-bold text-brand-700">{coverage.decision}</span>}>
+      <Meter label="Confidence" value={conf} tone="brand" valueLabel={pct(conf)} />
+      {coverage.rationale && <p className="mt-4 text-sm text-slate-600 leading-relaxed">{coverage.rationale}</p>}
+      {Array.isArray(coverage.citations) && coverage.citations.length > 0 && (
+        <div className="mt-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">Citations</div>
+          <div className="flex flex-wrap gap-2">
+            {coverage.citations.map((c, i) => <CitationChip key={i} c={c} />)}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function CitationChip({ c }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(o => !o)}
+        className="inline-flex items-center gap-1.5 rounded-lg bg-brand-50 hover:bg-brand-100 text-brand-700 px-2.5 py-1.5 text-xs font-medium border border-brand-100 transition-colors">
+        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+        {c.clause_id || c.document || 'Citation'}
+      </button>
+      {open && (
+        <div className="absolute z-20 mt-2 w-72 rounded-xl bg-white shadow-cardhover border border-slate-200 p-3.5 animate-fadein left-0">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{c.document}</div>
+          {c.clause_id && <div className="text-xs font-mono text-brand-700 mt-0.5">{c.clause_id}</div>}
+          {c.snippet && <p className="text-xs text-slate-600 mt-2 leading-relaxed">{c.snippet}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RiskCard({ risk }) {
+  if (!risk) return <CardSkeleton title="Fraud / Risk" />;
+  const score = clamp01(risk.score);
+  const tone = score < 0.34 ? 'emerald' : score < 0.67 ? 'amber' : 'rose';
+  const level = score < 0.34 ? 'Low' : score < 0.67 ? 'Elevated' : 'High';
+  return (
+    <Card title="Fraud / Risk" accent={tone} icon={<svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"/><path d="M12 9v4M12 16h.01"/></svg>}
+      right={<span className={['text-xs font-bold px-2.5 py-1 rounded-full', TONE[tone].soft, TONE[tone].text].join(' ')}>{level} · {pct(score)}</span>}>
+      <Meter label="Risk score" value={score} tone={tone} valueLabel={pct(score)} />
+      {Array.isArray(risk.signals) && risk.signals.length > 0 && (
+        <ul className="mt-4 space-y-2">
+          {risk.signals.map((s, i) => (
+            <li key={i} className="flex items-start gap-2.5 text-sm text-slate-600">
+              <span className={['mt-1.5 h-1.5 w-1.5 rounded-full shrink-0', TONE[tone].dot].join(' ')} />
+              <span className="leading-relaxed">{s}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {risk.recommendation && (
+        <p className={['mt-4 text-sm rounded-xl px-3.5 py-2.5 leading-relaxed', TONE[tone].bg, TONE[tone].text].join(' ')}>{risk.recommendation}</p>
+      )}
+    </Card>
+  );
+}
+
+function SettlementCard({ settlement }) {
+  if (!settlement) return <CardSkeleton title="Settlement" />;
+  const items = Array.isArray(settlement.breakdown) ? settlement.breakdown : [];
+  return (
+    <Card title="Settlement" accent="brand" icon={<svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>}>
+      <div className="divide-y divide-slate-100">
+        {items.map((it, i) => {
+          const neg = parseFloat(String(it.amount).replace(/[^0-9.\-]/g, '')) < 0;
+          return (
+            <div key={i} className="flex items-center justify-between py-2.5 gap-4">
+              <span className="text-sm text-slate-600">{it.description}</span>
+              <span className={['text-sm font-semibold tabular-nums shrink-0', neg ? 'text-rose-600' : 'text-slate-800'].join(' ')}>{money(it.amount)}</span>
+            </div>
+          );
+        })}
+        {items.length === 0 && <div className="py-2.5 text-sm text-slate-400">No line items.</div>}
+      </div>
+      <div className="mt-3 pt-3 border-t-2 border-slate-200 flex items-center justify-between">
+        <span className="text-sm font-bold text-slate-900">Total payable</span>
+        <span className="text-xl font-extrabold text-brand-700 tabular-nums">{money(settlement.payable_amount)}</span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs">
+        {settlement.deductible_applied !== undefined && (
+          <span className="rounded-lg bg-slate-50 border border-slate-200 px-2.5 py-1 text-slate-500">Deductible <span className="font-semibold text-slate-700">{money(settlement.deductible_applied)}</span></span>
+        )}
+        {settlement.limit_applied !== undefined && (
+          <span className="rounded-lg bg-slate-50 border border-slate-200 px-2.5 py-1 text-slate-500">Limit <span className="font-semibold text-slate-700">{money(settlement.limit_applied)}</span></span>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function ComplianceCard({ compliance }) {
+  if (!compliance) return <CardSkeleton title="Compliance" />;
+  const passed = !!compliance.passed;
+  const tone = passed ? 'emerald' : 'rose';
+  const violations = Array.isArray(compliance.violations) ? compliance.violations : [];
+  const advisories = Array.isArray(compliance.advisories) ? compliance.advisories : [];
+  return (
+    <Card title="Compliance" accent={tone} icon={<svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>}
+      right={
+        <span className={['inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full', TONE[tone].soft, TONE[tone].text].join(' ')}>
+          {passed ? <><svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L20 7"/></svg> Passed</> : <>Failed</>}
+        </span>
+      }>
+      {compliance.rationale && <p className="text-sm text-slate-600 leading-relaxed">{compliance.rationale}</p>}
+      {violations.length > 0 && (
+        <div className="mt-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-rose-500 mb-2">Violations</div>
+          <ul className="space-y-1.5">
+            {violations.map((v, i) => <li key={i} className="flex items-start gap-2 text-sm text-rose-700"><span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-rose-500 shrink-0" />{v}</li>)}
+          </ul>
+        </div>
+      )}
+      {advisories.length > 0 && (
+        <div className="mt-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-amber-500 mb-2">Advisories</div>
+          <ul className="space-y-1.5">
+            {advisories.map((v, i) => <li key={i} className="flex items-start gap-2 text-sm text-amber-700"><span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />{v}</li>)}
+          </ul>
+        </div>
+      )}
+      {passed && violations.length === 0 && advisories.length === 0 && (
+        <p className="mt-4 text-sm text-emerald-700 bg-emerald-50 rounded-xl px-3.5 py-2.5">All regulatory checks passed with no violations or advisories.</p>
+      )}
+    </Card>
+  );
+}
+
+/* ---- Audit trace (collapsible) ---- */
+function AuditTrace({ trace, cost }) {
+  const rows = Array.isArray(trace) ? trace : [];
+  if (rows.length === 0) return null;
+  return (
+    <details className="group bg-white rounded-2xl shadow-card border border-slate-200/60 overflow-hidden" open>
+      <summary className="cursor-pointer select-none flex items-center justify-between gap-3 px-6 py-5 hover:bg-slate-50/60 transition-colors">
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-xl bg-slate-100 text-slate-500 grid place-items-center" aria-hidden="true">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg>
+          </div>
+          <div>
+            <h2 className="font-bold text-slate-900">Audit trace</h2>
+            <p className="text-xs text-slate-400">{rows.length} agent steps · full execution record</p>
+          </div>
+        </div>
+        <svg viewBox="0 0 24 24" className="h-5 w-5 text-slate-400 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+      </summary>
+      <div className="px-6 pb-6 border-t border-slate-100">
+        <ol className="mt-2">
+          {rows.map((r, i) => {
+            const stage = STAGES.find(s => s.key === stageKeyFor(r.node));
+            return (
+              <li key={i} className="flex items-center gap-4 py-3 border-b border-slate-50 last:border-0">
+                <span className="h-7 w-7 rounded-full bg-brand-50 text-brand-700 text-xs font-bold grid place-items-center shrink-0">{i + 1}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-slate-800">{stage ? stage.label : r.node}</div>
+                  <div className="text-xs text-slate-400 font-mono truncate">{r.node}</div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-[11px] uppercase tracking-wide text-slate-400">Latency</div>
+                  <div className="text-sm font-semibold text-slate-700 tabular-nums">{ms(r.latency_ms)}</div>
+                </div>
+                <div className="text-right shrink-0 w-20">
+                  <div className="text-[11px] uppercase tracking-wide text-slate-400">Cost</div>
+                  <div className="text-sm font-semibold text-slate-700 tabular-nums">{usd(r.cost_usd)}</div>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+        {cost && (
+          <div className="mt-3 pt-3 border-t-2 border-slate-100 flex items-center justify-end gap-8">
+            <div className="text-right"><div className="text-[11px] uppercase tracking-wide text-slate-400">Total latency</div><div className="text-base font-bold text-slate-900 tabular-nums">{ms(cost.total_latency_ms)}</div></div>
+            <div className="text-right"><div className="text-[11px] uppercase tracking-wide text-slate-400">Total cost</div><div className="text-base font-bold text-slate-900 tabular-nums">{usd(cost.total_cost_usd)}</div></div>
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
+/* =========================================================================
+   HUMAN REVIEW
+   ========================================================================= */
+function ReviewView({ claim, onDecide, onDone }) {
+  const [notes, setNotes] = useState('');
+  const [busy, setBusy] = useState(null);   // 'approve' | 'deny' | null
+  const [err, setErr] = useState(null);
+  const decided = claim && claim.human_decision;
+
+  if (!claim) return <EmptyState title="Nothing to review" message="No escalated claim is currently loaded." />;
+
+  const act = async (decision) => {
+    setErr(null); setBusy(decision);
+    try {
+      await onDecide(decision, notes.trim());
+      setTimeout(onDone, 600);
+    } catch (e) {
+      setErr('Could not submit decision. Please try again.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const cov = claim.coverage || {};
+  const risk = claim.risk || {};
+  const set = claim.settlement || {};
+
+  return (
+    <div className="animate-fadeup">
+      <div className="mb-7 flex items-center gap-3">
+        <span className="text-2xl">🧑‍⚖️</span>
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Human review</h1>
+          <p className="text-slate-500 mt-1">This claim was escalated. Review the packet and record your decision.</p>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-6">
+        {/* Packet */}
+        <div className="lg:col-span-2 bg-white rounded-2xl shadow-card border border-slate-200/60 p-6 sm:p-7 space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="font-bold text-slate-900">Reasoned packet</h2>
+            {claim.policy_number && <span className="text-xs font-mono text-slate-400">{claim.policy_number}</span>}
+          </div>
+
+          <PacketRow label="Coverage" value={cov.decision || '—'} sub={cov.rationale} badge={pct(clamp01(cov.confidence)) + ' confidence'} />
+          <PacketRow label="Fraud / risk" value={(clamp01(risk.score) >= 0.67 ? 'High' : clamp01(risk.score) >= 0.34 ? 'Elevated' : 'Low') + ' · ' + pct(clamp01(risk.score))} sub={risk.recommendation} />
+          {Array.isArray(risk.signals) && risk.signals.length > 0 && (
+            <div className="rounded-xl bg-slate-50 border border-slate-100 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">Risk signals</div>
+              <ul className="space-y-1.5">{risk.signals.map((s, i) => <li key={i} className="flex items-start gap-2 text-sm text-slate-600"><span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />{s}</li>)}</ul>
+            </div>
+          )}
+          <PacketRow label="Proposed settlement" value={money(set.payable_amount)} sub={`Deductible ${money(set.deductible_applied)} · Limit ${money(set.limit_applied)}`} />
+        </div>
+
+        {/* Decision panel */}
+        <div className="lg:col-span-1">
+          <div className="bg-white rounded-2xl shadow-card border border-slate-200/60 p-6 lg:sticky lg:top-24">
+            {decided ? (
+              <div className="text-center py-6">
+                <div className="text-4xl mb-3">{claim.human_decision.decision === 'approve' ? '✅' : '⛔'}</div>
+                <div className="font-bold text-slate-900 capitalize text-lg">{claim.human_decision.decision}d</div>
+                <p className="text-sm text-slate-500 mt-1">Decision recorded.</p>
+                <button onClick={onDone} className="mt-5 w-full py-2.5 rounded-xl bg-brand-600 text-white font-semibold hover:bg-brand-700 transition-colors">Back to decision</button>
+              </div>
+            ) : (
+              <>
+                <label htmlFor="notes" className="block text-sm font-semibold text-slate-700">Adjuster notes</label>
+                <textarea id="notes" rows={5} value={notes} onChange={e => setNotes(e.target.value)}
+                  placeholder="Document your reasoning for the file…"
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-3 text-sm text-slate-900 placeholder:text-slate-400 leading-relaxed resize-y nice-scroll focus:bg-white focus:border-brand-400 focus:ring-4 focus:ring-brand-600/10 outline-none transition-all" />
+                {err && <p className="mt-2 text-sm text-rose-600">{err}</p>}
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <button onClick={() => act('approve')} disabled={!!busy}
+                    className="inline-flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600 disabled:opacity-60 transition-colors">
+                    {busy === 'approve' ? <Spinner small /> : <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L20 7"/></svg>}
+                    Approve
+                  </button>
+                  <button onClick={() => act('deny')} disabled={!!busy}
+                    className="inline-flex items-center justify-center gap-2 py-3 rounded-xl bg-white text-rose-600 font-semibold border border-rose-200 hover:bg-rose-50 disabled:opacity-60 transition-colors">
+                    {busy === 'deny' ? <Spinner small /> : <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>}
+                    Deny
+                  </button>
+                </div>
+                <p className="mt-3 text-xs text-slate-400 text-center">Your decision is logged to the claim's audit trail.</p>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PacketRow({ label, value, sub, badge }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+        {badge && <span className="text-xs font-medium text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5">{badge}</span>}
+      </div>
+      <div className="text-base font-bold text-slate-900 mt-0.5">{value}</div>
+      {sub && <p className="text-sm text-slate-500 mt-1 leading-relaxed">{sub}</p>}
+    </div>
+  );
+}
+
+/* =========================================================================
+   EVALS
+   ========================================================================= */
+function EvalsView({ demoMode }) {
+  const [data, setData] = useState(null);
+  const [state, setState] = useState('loading'); // loading | ready | error
+  const [isDemo, setIsDemo] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setState('loading');
+    API.evals()
+      .then(d => { if (!alive) return; setData(d); setIsDemo(false); setState('ready'); })
+      .catch(() => { if (!alive) return; setData(DEMO_EVALS); setIsDemo(true); setState('ready'); });
+    return () => { alive = false; };
+  }, []);
+
+  if (state === 'loading') {
+    return (
+      <div className="animate-fadeup">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 mb-7">Evaluations</h1>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-28 rounded-2xl bg-white border border-slate-200/60 shadow-card overflow-hidden relative"><Shimmer /></div>)}
+        </div>
+      </div>
+    );
+  }
+
+  const entries = Object.entries(data || {});
+  return (
+    <div className="animate-fadeup">
+      <div className="flex items-end justify-between gap-4 mb-7">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Evaluations</h1>
+          <p className="text-slate-500 mt-1">Latest scorecard for the adjudication agents.</p>
+        </div>
+        {isDemo && <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-md bg-amber-100 text-amber-700">Demo data</span>}
+      </div>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        {entries.map(([k, v], i) => <EvalStat key={k} name={k} value={v} index={i} />)}
+      </div>
+    </div>
+  );
+}
+
+function EvalStat({ name, value, index }) {
+  const label = name.replace(/[_\-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  let display = value, sub = null, ratio = null;
+  if (typeof value === 'number') {
+    if (value <= 1 && value >= 0) { display = pct(value); ratio = value; }
+    else display = value.toLocaleString();
+  } else if (typeof value === 'object' && value) {
+    display = value.value !== undefined ? value.value : JSON.stringify(value);
+    sub = value.delta !== undefined ? value.delta : null;
+  }
+  const good = ratio === null ? null : ratio >= 0.9 ? 'emerald' : ratio >= 0.75 ? 'amber' : 'rose';
+  return (
+    <div className="bg-white rounded-2xl shadow-card border border-slate-200/60 p-5 hover:shadow-cardhover transition-shadow animate-fadeup" style={{ animationDelay: (index * 60) + 'ms' }}>
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+      <div className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 tabular-nums">{display}</div>
+      {ratio !== null && (
+        <div className="mt-3 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+          <div className="h-full meter-fill rounded-full" style={{ width: Math.round(ratio * 100) + '%', background: TONE[good].bar }} />
+        </div>
+      )}
+      {sub && <div className="mt-2 text-xs text-slate-400">{sub}</div>}
+    </div>
+  );
+}
+
+const DEMO_EVALS = {
+  coverage_accuracy: 0.962,
+  fraud_detection_recall: 0.911,
+  settlement_mae_usd: 38.42,
+  auto_resolution_rate: 0.74,
+  compliance_pass_rate: 0.997,
+  avg_latency_ms: 6240,
+  avg_cost_per_claim_usd: 0.0242,
+  human_agreement_rate: 0.948,
+  escalation_precision: 0.883,
+};
+
+/* =========================================================================
+   SHARED UI BITS
+   ========================================================================= */
+function Meter({ label, value, tone = 'brand', valueLabel }) {
+  const t = TONE[tone] || TONE.brand;
+  const [w, setW] = useState(0);
+  useEffect(() => { const id = requestAnimationFrame(() => setW(clamp01(value) * 100)); return () => cancelAnimationFrame(id); }, [value]);
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</span>
+        <span className={['text-sm font-bold tabular-nums', t.text].join(' ')}>{valueLabel}</span>
+      </div>
+      <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden" role="meter" aria-valuenow={Math.round(clamp01(value) * 100)} aria-valuemin="0" aria-valuemax="100" aria-label={label}>
+        <div className="h-full meter-fill rounded-full" style={{ width: w + '%', background: t.bar }} />
+      </div>
+    </div>
+  );
+}
+
+function Metric({ label, value }) {
+  return (
+    <div className="text-right">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{label}</div>
+      <div className="text-lg font-bold text-slate-800 tabular-nums leading-tight">{value}</div>
+    </div>
+  );
+}
+
+function Spinner({ small }) {
+  const s = small ? 'h-4 w-4' : 'h-5 w-5';
+  return <svg className={[s, 'animate-spin'].join(' ')} viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" className="opacity-20" /><path d="M21 12a9 9 0 00-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>;
+}
+
+function Shimmer() {
+  return <div className="absolute inset-0 overflow-hidden"><div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-slate-100 to-transparent" /></div>;
+}
+
+function CardSkeleton({ title }) {
+  return (
+    <section className="bg-white rounded-2xl shadow-card border border-slate-200/60 p-6">
+      <div className="flex items-center gap-3 mb-5">
+        <div className="h-9 w-9 rounded-xl bg-slate-100 relative overflow-hidden"><Shimmer /></div>
+        <div className="font-bold text-slate-300">{title}</div>
+      </div>
+      <div className="space-y-3">
+        <div className="h-2.5 rounded-full bg-slate-100 relative overflow-hidden"><Shimmer /></div>
+        <div className="h-3 w-3/4 rounded bg-slate-100 relative overflow-hidden"><Shimmer /></div>
+        <div className="h-3 w-2/3 rounded bg-slate-100 relative overflow-hidden"><Shimmer /></div>
+      </div>
+    </section>
+  );
+}
+
+function DecisionSkeleton() {
+  return (
+    <div className="animate-fadein space-y-6">
+      <div className="rounded-3xl border border-slate-200/60 bg-white p-9 shadow-card relative overflow-hidden">
+        <Shimmer />
+        <div className="flex items-center gap-5 relative">
+          <div className="h-16 w-16 rounded-2xl bg-slate-100" />
+          <div className="space-y-2"><div className="h-3 w-24 bg-slate-100 rounded" /><div className="h-8 w-48 bg-slate-100 rounded" /></div>
+        </div>
+      </div>
+      <div className="grid lg:grid-cols-2 gap-6">
+        <CardSkeleton title="Coverage" /><CardSkeleton title="Fraud / Risk" /><CardSkeleton title="Settlement" /><CardSkeleton title="Compliance" />
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ title, message }) {
+  return (
+    <div className="animate-fadeup grid place-items-center py-20 text-center">
+      <div className="h-14 w-14 rounded-2xl bg-slate-100 text-slate-300 grid place-items-center mb-4">
+        <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12h6M9 16h6M9 8h6"/><path d="M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>
+      </div>
+      <h2 className="text-lg font-bold text-slate-700">{title}</h2>
+      <p className="text-slate-400 mt-1 max-w-sm">{message}</p>
+    </div>
+  );
+}
+
+function ErrorState({ title, message }) {
+  return (
+    <div className="animate-fadeup grid place-items-center py-20 text-center">
+      <div className="h-14 w-14 rounded-2xl bg-rose-50 text-rose-400 grid place-items-center mb-4">
+        <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8v4M12 16h.01"/><circle cx="12" cy="12" r="9"/></svg>
+      </div>
+      <h2 className="text-lg font-bold text-slate-700">{title}</h2>
+      <p className="text-slate-400 mt-1 max-w-sm">{message}</p>
+    </div>
+  );
+}
+
+/* =========================================================================
+   MOUNT
+   ========================================================================= */
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+
+<!-- Bootstrap: classic-runtime transform + eval, same-origin try/catch. -->
+<script>
+  (function () {
+    try {
+      var src = document.getElementById('app-source').textContent;
+      var out = Babel.transform(src, { presets: [['react', { runtime: 'classic' }]] }).code;
+      (0, eval)(out);
+    } catch (err) {
+      console.error('ClaimPilot failed to start:', err);
+      document.getElementById('root').innerHTML =
+        '<div style="max-width:32rem;margin:4rem auto;font-family:Inter,sans-serif;text-align:center;color:#475569">' +
+        '<h1 style="font-size:1.25rem;font-weight:700;color:#0f172a">Console failed to load</h1>' +
+        '<p style="margin-top:.5rem">Please refresh the page. If the problem persists, contact support.</p></div>';
+    }
+  })();
+</script>
+</body>
+</html>

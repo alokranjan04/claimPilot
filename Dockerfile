@@ -29,6 +29,7 @@ WORKDIR /app
 
 # Bring over the resolved virtualenv and the app.
 COPY --from=builder /app /app
+COPY ui ./ui
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PROVIDER=azure

@@ -13,10 +13,12 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from claimpilot.api.routes.claims import router as claims_router
 from claimpilot.api.routes.evals import router as evals_router
@@ -161,6 +163,11 @@ def create_app(
     async def readyz() -> JSONResponse:
         """Readiness probe."""
         return JSONResponse(content={"status": "ready"})
+
+    # Serve the Claims Console UI at / (after API routes so /v1/* wins).
+    _ui_dir = Path(__file__).resolve().parent.parent.parent.parent / "ui"
+    if _ui_dir.is_dir():
+        _app.mount("/", StaticFiles(directory=str(_ui_dir), html=True), name="ui")
 
     return _app
 
