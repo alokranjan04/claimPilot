@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     rag_chunk_tokens: int = 450
     rag_chunk_overlap: int = 50
 
+    # --- Auth -----------------------------------------------------------------
+    # Allow the X-Debug-Role header to override the caller identity.
+    # True for local dev/tests; False in production (Container Apps EasyAuth).
+    allow_debug_role: bool = False
+
     # --- Fake provider options ------------------------------------------------
     fake_seed: int = 42
 

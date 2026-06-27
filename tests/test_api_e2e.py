@@ -142,7 +142,7 @@ _ESCALATE_SCRIPTS = [
     {"passed": True, "violations": [], "rationale": "Compliant.", "citations": []},
 ] * 50
 
-_SETTINGS = Settings(rag_tau_sufficient=0.001)
+_SETTINGS = Settings(rag_tau_sufficient=0.001, allow_debug_role=True)
 
 
 # ---------------------------------------------------------------------------
@@ -459,3 +459,42 @@ async def test_escalated_list_requires_admin(approve_client: httpx.AsyncClient) 
         headers={"X-Debug-Role": "adjuster"},
     )
     assert resp.status_code == 403
+
+
+async def test_debug_role_ignored_when_disabled() -> None:
+    """With allow_debug_role=False, X-Debug-Role: admin is inert → 403."""
+    prod_settings = Settings(rag_tau_sufficient=0.001, allow_debug_role=False)
+    app = create_app(
+        prod_settings,
+        llm=FakeLLMClient(scripted=list(_ESCALATE_SCRIPTS)),
+        rag_corpus=_CORPUS,
+    )
+    async with (
+        _lifespan(app),
+        httpx.AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client,
+    ):
+        # Submit + wait for escalation
+        resp = await client.post(
+            "/v1/claims",
+            json={"policy_number": "POL-100", "fnol_text": "Total loss $50000."},
+        )
+        claim_id = resp.json()["claim_id"]
+        await _wait_for_terminal(client, claim_id)
+
+        # X-Debug-Role: admin header should be IGNORED → anonymous read-only → 403
+        dec_resp = await client.post(
+            f"/v1/claims/{claim_id}/decision",
+            json={"decision": "approve", "notes": "should fail"},
+            headers={"X-Debug-Role": "admin"},
+        )
+        assert dec_resp.status_code == 403
+
+        # /v1/me should show anonymous + read-only
+        me_resp = await client.get("/v1/me", headers={"X-Debug-Role": "admin"})
+        me = me_resp.json()
+        assert me["user"] == "anonymous"
+        assert "read-only" in me["roles"]
+        assert "admin" not in me["roles"]

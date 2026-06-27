@@ -6,9 +6,12 @@ In production (Container Apps with Entra ID EasyAuth enabled):
     roles come from the ``roles`` claim (configured as an App Role in the
     Entra ID app registration).
 
-In local dev (no EasyAuth, no headers):
+In local dev (``allow_debug_role=True`` in settings):
   - ``X-Debug-Role`` header selects a role (default ``adjuster``).
   - This lets tests and the demo UI work without any identity provider.
+
+When EasyAuth headers are absent AND debug mode is off, the caller is
+``anonymous`` with role ``read-only`` (no admin or adjuster privileges).
 
 Usage in routes::
 
@@ -33,7 +36,7 @@ class CallerIdentity(BaseModel):
     """The resolved identity of the current API caller."""
 
     user: str = Field(min_length=1)
-    roles: list[str] = Field(default_factory=lambda: ["adjuster"])
+    roles: list[str] = Field(default_factory=lambda: ["read-only"])
 
 
 def get_caller(request: Request) -> CallerIdentity:
@@ -41,8 +44,8 @@ def get_caller(request: Request) -> CallerIdentity:
 
     Resolution order:
     1. ``X-MS-CLIENT-PRINCIPAL-NAME`` + ``X-MS-CLIENT-PRINCIPAL`` (EasyAuth)
-    2. ``X-Debug-Role`` header (local dev / tests)
-    3. Default: ``adjuster`` role
+    2. ``X-Debug-Role`` header — only when ``settings.allow_debug_role`` is True
+    3. Anonymous caller with role ``read-only``
     """
     # --- EasyAuth path (production) ---
     principal_name = request.headers.get("x-ms-client-principal-name")
@@ -52,9 +55,16 @@ def get_caller(request: Request) -> CallerIdentity:
         roles = _extract_roles(principal_b64)
         return CallerIdentity(user=principal_name, roles=roles or ["adjuster"])
 
-    # --- Debug / local-dev fallback ---
-    debug_role = request.headers.get("x-debug-role", "adjuster")
-    return CallerIdentity(user="dev-user", roles=[debug_role])
+    # --- Debug / local-dev fallback (gated by setting) ---
+    settings = getattr(request.app.state, "settings", None)
+    allow_debug = getattr(settings, "allow_debug_role", False) if settings else False
+
+    if allow_debug:
+        debug_role = request.headers.get("x-debug-role", "adjuster")
+        return CallerIdentity(user="dev-user", roles=[debug_role])
+
+    # --- No auth headers, debug off → anonymous read-only ---
+    return CallerIdentity(user="anonymous", roles=["read-only"])
 
 
 def _extract_roles(principal_b64: str) -> list[str]:
