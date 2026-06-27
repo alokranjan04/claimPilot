@@ -434,7 +434,7 @@ class TestSettings:
         s = Settings()
         assert s.provider == "fake"
         assert s.fake_seed == 42
-        assert s.threshold_coverage_confidence == 0.8
+        assert s.threshold_coverage_confidence == 0.75
 
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("PROVIDER", "fake")
