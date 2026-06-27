@@ -9,9 +9,11 @@ name: CD — Build & Deploy to Azure
 # See docs/azure-cicd-setup.md for the one-time setup (federated credential + RBAC).
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch: {}
+  # Disabled auto-deploy on push until OIDC federation is set up
+  # (see docs/azure-cicd-setup.md steps 3-4).
+  # push:
+  #   branches: [main]
+  workflow_dispatch: {}  # manual trigger only
 
 # Required for OIDC federation with Azure (no secrets needed for login).
 permissions:
