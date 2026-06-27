@@ -10,6 +10,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
+from claimpilot.api.auth import CallerIdentity, get_caller, require_role
 from claimpilot.api.deps import get_claim_store, get_event_bus, get_queue
 from claimpilot.api.schemas import (
     ClaimStatusResponse,
@@ -32,13 +33,15 @@ router = APIRouter(prefix="/v1", tags=["claims"])
 
 
 @router.get("/me")
-async def get_me() -> dict[str, object]:
+async def get_me(
+    caller: Annotated[CallerIdentity, Depends(get_caller)],
+) -> dict[str, object]:
     """Return the current user identity and roles.
 
-    In production this reads from the Entra ID / JWT token.
-    For local dev it returns a default admin user so the UI is fully demoable.
+    In production, reads from EasyAuth headers (Entra ID).
+    In local dev, reads from ``X-Debug-Role`` header (default: adjuster).
     """
-    return {"user": "demo-adjuster", "roles": ["adjuster", "admin"]}
+    return {"user": caller.user, "roles": caller.roles}
 
 
 # ---------------------------------------------------------------------------
@@ -49,9 +52,15 @@ async def get_me() -> dict[str, object]:
 @router.get("/claims")
 async def list_claims(
     store: Annotated[ClaimStore, Depends(get_claim_store)],
+    caller: Annotated[CallerIdentity, Depends(get_caller)],
     status: str | None = None,
 ) -> list[dict[str, object]]:
-    """Return a summary of all tracked claims."""
+    """Return a summary of all tracked claims.
+
+    Filtering by ``status=escalated`` requires the ``admin`` role.
+    """
+    if status == "escalated" and "admin" not in caller.roles:
+        raise HTTPException(status_code=403, detail="Admin role required to list escalated claims.")
     records = await store.list_claims(status=status)
     return [
         {
@@ -219,6 +228,7 @@ async def human_decision(
     claim_id: str,
     body: HumanDecisionRequest,
     store: Annotated[ClaimStore, Depends(get_claim_store)],
+    _caller: Annotated[CallerIdentity, Depends(require_role("admin"))],
 ) -> HumanDecisionResponse:
     """Record a human adjudicator's decision on an escalated claim.
 

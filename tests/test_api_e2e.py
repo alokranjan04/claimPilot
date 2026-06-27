@@ -160,7 +160,11 @@ async def approve_client() -> AsyncGenerator[httpx.AsyncClient, None]:
     )
     async with (
         _lifespan(app),
-        httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client,
+        httpx.AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            headers={"X-Debug-Role": "admin"},
+        ) as client,
     ):
         yield client
 
@@ -175,7 +179,11 @@ async def escalate_client() -> AsyncGenerator[httpx.AsyncClient, None]:
     )
     async with (
         _lifespan(app),
-        httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client,
+        httpx.AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            headers={"X-Debug-Role": "admin"},
+        ) as client,
     ):
         yield client
 
@@ -401,3 +409,53 @@ async def test_evals_latest_returns_passing_scorecard(approve_client: httpx.Asyn
     assert data["gate_passed"] is True
     assert data["total_cases"] >= 10
     assert data["decision_accuracy"] >= 0.9
+
+
+# ---------------------------------------------------------------------------
+# Auth / RBAC
+# ---------------------------------------------------------------------------
+
+
+async def test_me_returns_roles(approve_client: httpx.AsyncClient) -> None:
+    """GET /v1/me returns the caller identity with roles."""
+    resp = await approve_client.get("/v1/me")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "user" in data
+    assert "roles" in data
+    assert isinstance(data["roles"], list)
+
+
+async def test_me_default_role_is_adjuster(approve_client: httpx.AsyncClient) -> None:
+    """Without X-Debug-Role header, default role is adjuster."""
+    resp = await approve_client.get("/v1/me", headers={"X-Debug-Role": ""})
+    # empty header → falls through to default "adjuster" in get_caller
+    assert resp.status_code == 200
+
+
+async def test_decision_requires_admin_role(escalate_client: httpx.AsyncClient) -> None:
+    """POST /decision returns 403 for a non-admin caller."""
+    resp = await escalate_client.post(
+        "/v1/claims",
+        json={"policy_number": "POL-100", "fnol_text": "Total loss $50000."},
+    )
+    claim_id = resp.json()["claim_id"]
+    await _wait_for_terminal(escalate_client, claim_id)
+
+    # Call as adjuster (not admin) → 403
+    dec_resp = await escalate_client.post(
+        f"/v1/claims/{claim_id}/decision",
+        json={"decision": "approve", "notes": "test"},
+        headers={"X-Debug-Role": "adjuster"},  # override the default admin
+    )
+    assert dec_resp.status_code == 403
+    assert "admin" in dec_resp.json()["detail"].lower()
+
+
+async def test_escalated_list_requires_admin(approve_client: httpx.AsyncClient) -> None:
+    """GET /v1/claims?status=escalated returns 403 for non-admin."""
+    resp = await approve_client.get(
+        "/v1/claims?status=escalated",
+        headers={"X-Debug-Role": "adjuster"},
+    )
+    assert resp.status_code == 403
