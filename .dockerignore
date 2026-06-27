@@ -1,0 +1,21 @@
+.git
+.github
+.venv
+.uv
+__pycache__
+*.pyc
+.mypy_cache
+.ruff_cache
+.pytest_cache
+htmlcov
+.coverage
+tests
+docs
+sample_claims
+infra/iac
+*.drawio
+.env
+.env.*
+!.env.example
+# README.md is NOT excluded — hatchling needs it for the build
+PROGRESS.md
