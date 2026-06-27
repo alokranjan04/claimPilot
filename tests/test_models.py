@@ -83,9 +83,10 @@ class TestLineItem:
         li = _line_item()
         assert li.amount == Decimal("5000")
 
-    def test_negative_amount_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            LineItem(description="Repair", amount=Decimal("-1"))
+    def test_negative_amount_allowed_for_deductibles(self) -> None:
+        """Negative amounts represent deductions (e.g. deductible subtraction)."""
+        item = LineItem(description="Deductible", amount=Decimal("-500"))
+        assert item.amount == Decimal("-500")
 
 
 # ---------------------------------------------------------------------------

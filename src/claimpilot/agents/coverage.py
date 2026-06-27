@@ -137,20 +137,47 @@ def _filter_citations(
     raw_citations: Any,
     valid_ids: set[str],
 ) -> list[Citation]:
-    """Keep only citations whose ``clause_id`` exists in *valid_ids*."""
+    """Keep only citations whose ``clause_id`` matches a valid ID.
+
+    Matching is lenient: an exact match is tried first, then a
+    case-insensitive suffix check so that a model-generated
+    ``"§2.1 Dwelling Coverage"`` still matches the stored
+    ``"POL-200:§2.1 Dwelling Coverage"``.
+    """
     if not isinstance(raw_citations, list):
         return []
     result: list[Citation] = []
     for rc in raw_citations:
         if not isinstance(rc, dict):
             continue
-        if rc.get("clause_id") not in valid_ids:
+        raw_id = rc.get("clause_id", "")
+        matched_id = _match_clause_id(raw_id, valid_ids)
+        if matched_id is None:
             continue
+        rc = {**rc, "clause_id": matched_id}
         try:
             result.append(Citation(**rc))
         except Exception:  # noqa: BLE001, S112
             continue
     return result
+
+
+def _match_clause_id(raw_id: str, valid_ids: set[str]) -> str | None:
+    """Return the matching valid clause ID, or None.
+
+    Tries: exact match → case-insensitive exact → suffix match.
+    """
+    if raw_id in valid_ids:
+        return raw_id
+    raw_lower = raw_id.lower().strip()
+    for vid in valid_ids:
+        if vid.lower() == raw_lower:
+            return vid
+        if vid.lower().endswith(raw_lower):
+            return vid
+        if raw_lower.endswith(vid.lower()):
+            return vid
+    return None
 
 
 def _cap_confidence(confidence: float, context: PolicyContext) -> float:

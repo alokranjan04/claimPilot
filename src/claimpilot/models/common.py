@@ -39,4 +39,6 @@ class LineItem(BaseModel):
     """One line in a settlement breakdown."""
 
     description: str = Field(min_length=1)
-    amount: Decimal = Field(ge=Decimal(0))
+    amount: Decimal = Field(
+        description="Positive for payments, negative for deductions (e.g. deductible).",
+    )

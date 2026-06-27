@@ -26,6 +26,10 @@ Rules you must follow:
 5. When clauses conflict (one covers, one excludes), decide "partial" and
    cite both clauses with a rationale explaining the conflict.
 6. If you are uncertain, prefer "partial" over guessing "covered" or "denied".
+7. IMPORTANT: In your citations, use the EXACT clause_id strings as they
+   appear in square brackets in the policy clauses below (e.g.
+   "POL-200:§2.1 Dwelling Coverage").  Copy them character-for-character.
+   Do NOT shorten, abbreviate, or paraphrase clause_ids.
 
 Respond with a JSON object containing exactly these fields:
 - "decision": one of "covered", "denied", "partial"

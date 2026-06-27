@@ -52,6 +52,36 @@ _DEMO_CORPUS: list[SourceDoc] = [
         ),
         metadata={"jurisdiction": "IL", "policy_type": "auto"},
     ),
+    SourceDoc(
+        doc_id="POL-200",
+        title="Homeowner's Insurance Policy",
+        text=(
+            "# §2.1 Dwelling Coverage\n"
+            "Covers damage to the insured dwelling from fire, lightning, windstorm, hail, "
+            "explosion, smoke, vandalism, theft, and water damage from burst pipes or "
+            "accidental overflow. The deductible is $1,000 per incident. Coverage limit "
+            "is the dwelling replacement cost stated on the declarations page.\n\n"
+            "# §2.2 Personal Property Coverage\n"
+            "Covers loss or damage to personal belongings inside the dwelling, including "
+            "furniture, electronics, clothing, and appliances. Sub-limit of $2,500 for "
+            "jewelry, watches, and furs. Coverage is actual cash value unless replacement "
+            "cost endorsement is purchased.\n\n"
+            "# §2.3 Loss of Use Coverage\n"
+            "If the dwelling is uninhabitable due to a covered peril, pays reasonable "
+            "additional living expenses (hotel, meals, temporary rental) for up to "
+            "12 months or 20% of the dwelling coverage limit, whichever is less.\n\n"
+            "# §2.4 Liability Coverage\n"
+            "Covers bodily injury or property damage to third parties occurring on the "
+            "insured premises. Minimum limit is $100,000 per occurrence. Includes legal "
+            "defense costs. Does not cover intentional acts or business activities.\n\n"
+            "# §2.5 Exclusions\n"
+            "Does not cover: flood damage (requires separate flood policy), earthquake, "
+            "gradual deterioration or wear and tear, mold (unless resulting from a covered "
+            "peril), pest or vermin damage, intentional damage by the insured, or damage "
+            "from failure to maintain the property."
+        ),
+        metadata={"jurisdiction": "IL", "policy_type": "homeowner"},
+    ),
 ]
 
 

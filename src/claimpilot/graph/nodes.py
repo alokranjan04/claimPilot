@@ -29,7 +29,39 @@ from claimpilot.models.claim import ClaimFacts
 from claimpilot.models.common import Party
 from claimpilot.models.decisions import PolicyContext
 from claimpilot.models.trace import StepTrace
+from claimpilot.observability.cost_meter import COST_PER_COMPLETION_TOKEN, COST_PER_PROMPT_TOKEN
 from claimpilot.rag.pipeline import RagPipeline
+
+
+class _CostTracker:
+    """Thin LLM wrapper that accumulates token usage for StepTrace.cost_usd."""
+
+    def __init__(self, llm: LLMClient) -> None:
+        self._llm = llm
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+
+    async def generate(
+        self,
+        messages: list[dict[str, str]],
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        result = await self._llm.generate(messages, **kwargs)
+        usage = result.get("usage", {})
+        self.prompt_tokens += usage.get("prompt_tokens", 0)
+        self.completion_tokens += usage.get("completion_tokens", 0)
+        return result
+
+    @property
+    def cost_usd(self) -> Decimal:
+        return COST_PER_PROMPT_TOKEN * Decimal(
+            self.prompt_tokens
+        ) + COST_PER_COMPLETION_TOKEN * Decimal(self.completion_tokens)
+
+    # Expose dimensions for Embedder protocol compatibility (not needed here).
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._llm, name)
+
 
 # ---------------------------------------------------------------------------
 # Stub nodes (intake — real extraction arrives in a later milestone)
@@ -129,12 +161,14 @@ def make_coverage_node(llm: LLMClient):  # type: ignore[no-untyped-def]
         facts = state["facts"]
         ctx = state["policy_context"]
         assert facts is not None and ctx is not None
-        opinion = await coverage_decide(facts, ctx, llm=llm)
+        tracker = _CostTracker(llm)
+        opinion = await coverage_decide(facts, ctx, llm=tracker)
         trace = StepTrace(
             node="coverage_decision",
             inputs={"claim_id": state.get("claim_id", "")},
             outputs=opinion.model_dump(),
             citations=list(opinion.citations),
+            cost_usd=tracker.cost_usd,
         )
         return {"coverage": opinion, "trace": [trace]}
 
@@ -152,9 +186,10 @@ def make_fraud_risk_node(  # type: ignore[no-untyped-def]
     async def fraud_risk(state: GraphState) -> dict[str, Any]:
         facts = state["facts"]
         assert facts is not None
+        tracker = _CostTracker(llm)
         assessment = await fraud_assess(
             facts,
-            llm=llm,
+            llm=tracker,
             claims_history=claims_history,
             fraud_signals=fraud_signals,
         )
@@ -167,6 +202,7 @@ def make_fraud_risk_node(  # type: ignore[no-untyped-def]
             node="fraud_risk",
             inputs={"claim_id": state.get("claim_id", ""), "tool_calls": tool_calls},
             outputs=assessment.model_dump(),
+            cost_usd=tracker.cost_usd,
         )
         return {"risk": assessment, "trace": [trace]}
 
@@ -180,11 +216,13 @@ def make_settlement_node(llm: LLMClient):  # type: ignore[no-untyped-def]
         facts = state["facts"]
         coverage = state["coverage"]
         assert facts is not None and coverage is not None
-        proposal = await settlement_compute(facts, coverage, llm=llm)
+        tracker = _CostTracker(llm)
+        proposal = await settlement_compute(facts, coverage, llm=tracker)
         trace = StepTrace(
             node="settlement",
             inputs={"claim_id": state.get("claim_id", "")},
             outputs=proposal.model_dump(),
+            cost_usd=tracker.cost_usd,
         )
         return {"settlement": proposal, "trace": [trace]}
 
@@ -205,7 +243,15 @@ def make_compliance_node(  # type: ignore[no-untyped-def]
         settle = state["settlement"]
         assert facts is not None and ctx is not None
         assert coverage is not None and settle is not None
-        verdict = await compliance_review(facts, ctx, coverage, settle, llm=llm, regs=regs)
+        tracker = _CostTracker(llm)
+        verdict = await compliance_review(
+            facts,
+            ctx,
+            coverage,
+            settle,
+            llm=tracker,
+            regs=regs,
+        )
         tool_calls: list[str] = []
         if regs is not None:
             tool_calls.append("regs.search")
@@ -213,6 +259,7 @@ def make_compliance_node(  # type: ignore[no-untyped-def]
             node="compliance",
             inputs={"claim_id": state.get("claim_id", ""), "tool_calls": tool_calls},
             outputs=verdict.model_dump(),
+            cost_usd=tracker.cost_usd,
         )
         return {"compliance": verdict, "trace": [trace]}
 
