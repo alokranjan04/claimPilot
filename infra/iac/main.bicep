@@ -206,6 +206,39 @@ resource checkpointsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabase
 }
 
 // ---------------------------------------------------------------------------
+// Azure Container Registry (M11 — image builds)
+// ---------------------------------------------------------------------------
+
+resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+  name: '${prefix}acr${uniqueSuffix}'
+  location: location
+  sku: {
+    name: 'Basic'
+  }
+  properties: {
+    adminUserEnabled: false          // use managed-identity pull, not admin keys
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Container Apps environment (M11 — Log Analytics-backed)
+// ---------------------------------------------------------------------------
+
+resource containerEnv 'Microsoft.App/managedEnvironments@2023-05-01' = {
+  name: '${prefix}-cae-${uniqueSuffix}'
+  location: location
+  properties: {
+    appLogsConfiguration: {
+      destination: 'log-analytics'
+      logAnalyticsConfiguration: {
+        customerId: logAnalytics.properties.customerId
+        sharedKey: logAnalytics.listKeys().primarySharedKey
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Outputs (used by az CLI key-fetch commands and .env config)
 // ---------------------------------------------------------------------------
 
@@ -238,3 +271,12 @@ output appInsightsConnectionString string = appInsights.properties.ConnectionStr
 
 @description('Key Vault URI — store secrets here; reference via env / workload identity.')
 output keyVaultUri string = keyVault.properties.vaultUri
+
+@description('Container Registry login server — set as ACR_NAME in GitHub vars.')
+output acrLoginServer string = acr.properties.loginServer
+
+@description('Container Registry name — use with az acr build.')
+output acrName string = acr.name
+
+@description('Container Apps environment name — use with az containerapp create.')
+output containerEnvName string = containerEnv.name
