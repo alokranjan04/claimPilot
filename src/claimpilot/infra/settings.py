@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     embedding_dimensions: int = 64
 
     # --- Routing thresholds (Supervisor decision logic) -----------------------
-    threshold_coverage_confidence: float = 0.75
+    threshold_coverage_confidence: float = 0.70
     threshold_risk_score: float = 0.3
     threshold_max_auto_amount: Decimal = Decimal("10000")
 

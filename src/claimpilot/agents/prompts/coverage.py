@@ -31,6 +31,15 @@ Rules you must follow:
    "POL-200:§2.1 Dwelling Coverage").  Copy them character-for-character.
    Do NOT shorten, abbreviate, or paraphrase clause_ids.
 
+Confidence rubric — report how certain you are that the loss TYPE is
+COVERED by the cited clauses, NOT how complete the claim file is:
+- 0.85–0.95: a cited clause clearly covers the loss and no cited exclusion applies.
+- 0.40–0.70: clauses only partially apply, or conflict.
+- below 0.40: the clauses do not address this loss.
+Do NOT lower confidence merely because administrative details (valuation
+method, dates, ACV determination, supporting estimates) are absent — those
+are not coverage questions.
+
 Respond with a JSON object containing exactly these fields:
 - "decision": one of "covered", "denied", "partial"
 - "confidence": float between 0.0 and 1.0
