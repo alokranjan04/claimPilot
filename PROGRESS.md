@@ -2,7 +2,7 @@
 
 Spec-driven, milestone by milestone. Everything runs **offline on deterministic fakes** — no cloud or API keys needed to build, test, or demo. See `docs/BUILD_PLAN.md` for the full roadmap and `docs/specs/` for the source-of-truth specs.
 
-> **🟢 Live on Azure:** an auto claim now flows end-to-end on real GPT-5.2 → **`auto_approved`** (coverage `covered` @ 0.90, compliance passed, $1,300 settlement, fully cited, ~$0.02/claim). Escalation paths (high-amount, off-domain, low-confidence) also verified live. Production package authored: `docs/DEPLOYMENT_RUNBOOK.md`, `docs/PRODUCTION_ARCHITECTURE.md`, deployment-topology diagram.
+> **🟢 Deployed & live on Azure Container Apps (M11):** the app is containerized and running as a public Container App, serving real GPT-5.2 adjudications end-to-end. Auto-approve path → **`auto_approved`** (coverage `covered` @ 0.90, compliance passed, $1,300 settlement, fully cited, ~$0.02/claim). Escalation paths verified live — including the **fraud/risk agent flagging a claimed-amount vs. narrative discrepancy** and escalating to human review. Production package: `docs/DEPLOYMENT_RUNBOOK.md`, `docs/PRODUCTION_ARCHITECTURE.md`, deployment-topology diagram, keyless OIDC CI/CD.
 >
 > **Real-model calibration note:** reasoning models report confidence non-deterministically at temperature 1; resolved by (a) recalibrating the coverage confidence rubric to measure *coverage certainty*, not file completeness, and (b) setting the auto-approve gate with margin (0.70) rather than chasing the raw number.
 
@@ -19,9 +19,10 @@ Spec-driven, milestone by milestone. Everything runs **offline on deterministic 
 | M8 — API + queue + checkpointing | ✅ Done | 182 |
 | M9 — Observability | ✅ Done | 205 |
 | M10 — Azure providers (live: 6 services provisioned) | ✅ Done | 240 |
-| M11 — Containerise + deploy | ✅ Done | 244 |
+| M11 — Containerise + deploy (live on Container Apps) | ✅ Done | 244 |
+| M12 — AuthN/AuthZ + operator/admin UI (EasyAuth · RBAC · debug-role gated) | ✅ Done | 249 |
 
-> The arc: **M0–M2 built the safe, testable foundation · M3 made it flow · M4 gave it grounded knowledge · M5 makes the decisions real · M6 added enterprise tool integration · M7 gates every change on measurable quality · M8 exposes it all as a production-grade async REST API · M9 makes every claim traceable with spans, structured logs, and cost accounting · M10 wires in real Azure services behind the same interfaces — zero core-code changes · M11 packages it for production with a multi-stage Docker image, standalone worker, corpus ingestion job, ACR/Container Apps IaC, and keyless OIDC CI/CD — deploy executed by the human via the runbook.**
+> The arc: **M0–M2 built the safe, testable foundation · M3 made it flow · M4 gave it grounded knowledge · M5 makes the decisions real · M6 added enterprise tool integration · M7 gates every change on measurable quality · M8 exposes it all as a production-grade async REST API · M9 makes every claim traceable with spans, structured logs, and cost accounting · M10 wires in real Azure services — zero core-code changes · M11 containerises + deploys with keyless OIDC CI/CD · M12 adds role-based auth (EasyAuth) and a Claims Console UI with Operator/Admin views.**
 
 ---
 
@@ -133,14 +134,52 @@ Seven production Azure providers behind the existing interfaces — **zero chang
 
 ---
 
-## M11 — Containerise + keyless CI/CD 🚧
-- **`Dockerfile`** — multi-stage `uv` build, non-root runtime user, runs the FastAPI API; no keys in the image (Azure auth via managed identity at runtime).
-- **`.github/workflows/cd.yml`** — on push to `main`: re-runs the full gate (ruff → mypy → pytest → **eval gate**), builds the image in **ACR** (`az acr build`), and rolls it out to **Azure Container Apps** (`az containerapp update`). Pipeline → Azure auth is **OIDC federation (no stored secret)**; a `production` environment hook allows a manual approval gate.
-- **`docs/azure-cicd-setup.md`** — one-time keyless wiring: federated credential, RBAC for both the pipeline identity and the app's managed identity, and the GitHub secrets/variables the workflow needs.
+## M11 — Containerise + deploy ✅
 
-**Remaining:** create the ACR + Container Apps environment, run the one-time OIDC/RBAC setup, and confirm the first live deploy goes green (optionally split the worker into its own Container App with a KEDA Service Bus scale rule).
+**Deployed and live on Azure Container Apps** at `https://claimpilot-api.victoriouswave-931a0f8e.southindia.azurecontainerapps.io/`.
 
-**Why it matters:** fully keyless delivery — the pipeline authenticates to Azure with OIDC and the app with managed identity, so there are no secrets to rotate or leak; every deploy is gated on the eval scorecard before a new revision goes live.
+**Entrypoints:**
+- `worker_main.py` — standalone worker (`python -m claimpilot.api.worker_main`), runs the `run_worker` loop until SIGTERM; deployed as its own Container App with KEDA Service Bus scaling.
+- `ingest_corpus.py` — one-shot corpus ingestion (`python -m claimpilot.rag.ingest_corpus`); chunks the demo policy corpus, embeds via Azure OpenAI, upserts to AI Search.
+
+**Container build:** multi-stage Dockerfile (uv install → slim runtime, non-root user, both API + worker entrypoints). `COPY ui ./ui` serves the Claims Console at `/`.
+
+**CI/CD:** `.github/workflows/cd.yml` — push to main → gate (ruff + mypy + pytest + eval) → `az acr build` → deploy both API + Worker Container Apps. Auth is **keyless OIDC** (GitHub → Azure federation, no stored secret). OIDC federated credentials for both `ref:refs/heads/main` and `environment:production`.
+
+**IaC:** Bicep provisions ACR (Basic) + Container Apps environment (Log Analytics-backed) alongside the M10 data services.
+
+**Tests** (`tests/test_m11_entrypoints.py`): worker starts/processes/cancels cleanly over fakes; ingestion populates the vector store with searchable chunks. (244 tests)
+
+---
+
+## M12 — AuthN/AuthZ + Claims Console UI ✅
+
+**Role-based access control** with Container Apps EasyAuth + Entra ID — no token-validation code.
+
+**Auth module** (`src/claimpilot/api/auth.py`):
+- `CallerIdentity` model with `user` + `roles`
+- `get_caller()` reads EasyAuth headers (`X-MS-CLIENT-PRINCIPAL-NAME` + `X-MS-CLIENT-PRINCIPAL`) in production; falls back to `X-Debug-Role` header **only when `allow_debug_role=True`** (default: `False`)
+- When EasyAuth headers absent and debug off → anonymous caller with `read-only` role (no admin/adjuster privileges)
+- `require_role("admin")` dependency → returns 403 with clear detail
+
+**Protected routes:**
+- `POST /v1/claims/{id}/decision` — admin only (403 for adjuster)
+- `GET /v1/claims?status=escalated` — admin only
+- `POST /v1/claims` / `GET /v1/claims/{id}` — open to all roles
+- `GET /v1/me` — returns caller identity + roles
+
+**Claims Console UI** (`ui/index.html`):
+- React 18 + Tailwind single-file app served at `/` via FastAPI StaticFiles
+- Role-aware shell: fetches `/v1/me` on mount, dev-mode role switcher (Adjuster/Admin)
+- **Operator view:** Submit, Live, Decision, Evals — escalated claims show "Pending adjuster review"
+- **Admin view:** all above + Admin tab with escalated claims queue table → click-through to reasoned packet + Approve/Deny
+- Evals tab: case results as formatted table with pass/fail badges
+
+**Tests:** 5 new auth tests — decision 403 for adjuster, 200 for admin; debug-role ignored when `allow_debug_role=False`; escalated list 403 for non-admin; `/v1/me` returns roles. (249 tests total)
+
+**Gate (249 tests):** `ruff` clean · `mypy --strict` (70 source files) · 249/249 tests pass.
+
+---
 
 ## What's done
-**M0–M10 complete and gated; M10 live on Azure.** Every interface has a real Azure implementation, IaC provisions all resources, and the system runs end-to-end against six live Azure services. M11 (containerise + keyless CI/CD) is authored; the live Container Apps rollout is the final step.
+**M0–M12 complete, gated, deployed, and live.** The full system — from claim submission through multi-agent adjudication to human review — runs end-to-end on Azure Container Apps with real GPT-5.2 decisions, keyless OIDC CI/CD, and role-based access control. Every push to main re-runs the eval gate and auto-deploys.
