@@ -67,7 +67,6 @@ def configure_logging(*, json_output: bool = True) -> None:
     """
     processors: list[Any] = [  # Any: structlog processor protocol is broad
         structlog.stdlib.add_log_level,
-        structlog.stdlib.add_logger_name,
         structlog.processors.TimeStamper(fmt="iso"),
         _drop_pii,
     ]
