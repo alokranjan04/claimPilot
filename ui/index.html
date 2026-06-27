@@ -127,6 +127,9 @@ const { useState, useEffect, useRef, useCallback, useMemo } = React;
    can decide whether to fall back to the demo simulator.
    ========================================================================= */
 const API = {
+  async me() {
+    return fetchJSON('/v1/me');
+  },
   async submit(policy_number, fnol_text) {
     return fetchJSON('/v1/claims', {
       method: 'POST',
@@ -136,6 +139,10 @@ const API = {
   },
   async get(id) {
     return fetchJSON(`/v1/claims/${encodeURIComponent(id)}`);
+  },
+  async listClaims(status) {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+    return fetchJSON(`/v1/claims${qs}`);
   },
   async decide(id, decision, notes) {
     return fetchJSON(`/v1/claims/${encodeURIComponent(id)}/decision`, {
@@ -344,6 +351,19 @@ function App() {
   const [phase, setPhase] = useState('idle');      // idle | submitting | processing | done | error
   const [error, setError] = useState(null);
   const [demoMode, setDemoMode] = useState(false);
+  const [user, setUser] = useState(null);          // { user: string, roles: string[] }
+  const [roleFallback, setRoleFallback] = useState(null); // dev-mode role override
+
+  // Fetch user identity on mount
+  useEffect(() => {
+    API.me()
+      .then(u => setUser(u))
+      .catch(() => setRoleFallback('admin')); // API unavailable → dev-mode role switcher
+  }, []);
+
+  const currentRoles = user ? (user.roles || []) : (roleFallback ? [roleFallback] : ['adjuster']);
+  const isAdmin = currentRoles.includes('admin');
+  const userName = user ? user.user : (roleFallback ? `Dev (${roleFallback})` : 'Guest');
 
   const demoRef = useRef(null);     // holds simulator state + timers
   const pollRef = useRef(null);
@@ -509,20 +529,21 @@ function App() {
       { id: 'live', label: 'Live', disabled: !claimId },
       { id: 'decision', label: 'Decision', disabled: !(claim && claim.disposition) },
     ];
-    if (isEscalated) base.push({ id: 'review', label: 'Human Review', badge: true });
     base.push({ id: 'evals', label: 'Evals' });
+    if (isAdmin) base.push({ id: 'admin', label: 'Admin', badge: isEscalated });
     return base;
-  }, [claimId, claim, isEscalated]);
+  }, [claimId, claim, isEscalated, isAdmin]);
 
   return (
     <div className="min-h-screen flex flex-col">
-      <TopBar tab={tab} setTab={setTab} tabs={tabs} demoMode={demoMode} onReset={reset} hasClaim={!!claimId} />
+      <TopBar tab={tab} setTab={setTab} tabs={tabs} demoMode={demoMode} onReset={reset} hasClaim={!!claimId}
+        userName={userName} roleFallback={roleFallback} onRoleSwitch={setRoleFallback} isAdmin={isAdmin} />
 
       <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
         {tab === 'submit' && <SubmitView onSubmit={submitClaim} phase={phase} />}
         {tab === 'live' && <LiveView claim={claim} phase={phase} error={error} demoMode={demoMode} onGoDecision={() => setTab('decision')} />}
-        {tab === 'decision' && <DecisionView claim={claim} phase={phase} isEscalated={isEscalated} onReview={() => setTab('review')} />}
-        {tab === 'review' && <ReviewView claim={claim} onDecide={submitDecision} onDone={() => setTab('decision')} />}
+        {tab === 'decision' && <DecisionView claim={claim} phase={phase} isEscalated={isEscalated} isAdmin={isAdmin} onReview={() => setTab('admin')} />}
+        {tab === 'admin' && isAdmin && <AdminView claim={claim} claimId={claimId} onDecide={submitDecision} onDone={() => setTab('decision')} demoMode={demoMode} />}
         {tab === 'evals' && <EvalsView demoMode={demoMode} />}
       </main>
 
@@ -539,7 +560,7 @@ function App() {
 /* =========================================================================
    TOP BAR + TABS
    ========================================================================= */
-function TopBar({ tab, setTab, tabs, demoMode, onReset, hasClaim }) {
+function TopBar({ tab, setTab, tabs, demoMode, onReset, hasClaim, userName, roleFallback, onRoleSwitch, isAdmin }) {
   return (
     <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200/70">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -582,6 +603,20 @@ function TopBar({ tab, setTab, tabs, demoMode, onReset, hasClaim }) {
                 New claim
               </button>
             )}
+            {/* Role indicator + dev switcher */}
+            <div className="flex items-center gap-2 ml-2 pl-2 border-l border-slate-200">
+              <span className={['text-xs font-semibold px-2 py-1 rounded-lg', isAdmin ? 'bg-brand-50 text-brand-700' : 'bg-slate-100 text-slate-500'].join(' ')}>
+                {isAdmin ? 'Admin' : 'Adjuster'}
+              </span>
+              <span className="text-xs text-slate-400 hidden sm:inline">{userName}</span>
+              {roleFallback !== null && (
+                <select value={roleFallback} onChange={e => onRoleSwitch(e.target.value)}
+                  className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-1.5 py-1 text-slate-600">
+                  <option value="adjuster">Adjuster</option>
+                  <option value="admin">Admin</option>
+                </select>
+              )}
+            </div>
           </div>
         </div>
 
@@ -821,7 +856,7 @@ function PipelineNode({ stage, status, trace, isLast, index }) {
 /* =========================================================================
    DECISION VIEW
    ========================================================================= */
-function DecisionView({ claim, phase, isEscalated, onReview }) {
+function DecisionView({ claim, phase, isEscalated, isAdmin, onReview }) {
   if (!claim) return <EmptyState title="No decision yet" message="Submit a claim to see the adjudication outcome here." />;
   const disp = claim.disposition;
   if (!disp) {
@@ -858,12 +893,16 @@ function DecisionView({ claim, phase, isEscalated, onReview }) {
           <div className="relative mt-6 flex flex-col sm:flex-row sm:items-center gap-3 justify-between rounded-2xl bg-white/70 border border-amber-200 px-5 py-4">
             <div className="flex items-center gap-3">
               <span className="text-xl">🧑‍⚖️</span>
-              <p className="text-sm text-amber-800 font-medium">This claim needs a human adjuster's decision before it can be settled.</p>
+              <p className="text-sm text-amber-800 font-medium">
+                {isAdmin ? 'This claim needs a human adjuster\'s decision before it can be settled.' : 'Pending adjuster review — an admin will approve or deny this claim.'}
+              </p>
             </div>
-            <button onClick={onReview} className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 transition-colors">
-              Open review packet
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-            </button>
+            {isAdmin && (
+              <button onClick={onReview} className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 transition-colors">
+                Open review packet
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              </button>
+            )}
           </div>
         )}
         {claim.human_decision && (
@@ -1108,7 +1147,98 @@ function AuditTrace({ trace, cost }) {
 /* =========================================================================
    HUMAN REVIEW
    ========================================================================= */
-function ReviewView({ claim, onDecide, onDone }) {
+/* =========================================================================
+   ADMIN VIEW — escalated claims queue + review
+   ========================================================================= */
+function AdminView({ claim, claimId, onDecide, onDone, demoMode }) {
+  const [queue, setQueue] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState(null);
+  const [selectedClaim, setSelectedClaim] = useState(null);
+
+  // Fetch escalated claims
+  useEffect(() => {
+    setLoading(true);
+    API.listClaims('escalated')
+      .then(list => { setQueue(list); setLoading(false); })
+      .catch(() => {
+        // Fallback: if the current claim is escalated, show it
+        if (claim && (claim.status === 'escalated' || claim.disposition === 'escalated')) {
+          setQueue([{ claim_id: claimId, status: 'escalated', disposition: 'escalated', claimed_amount: '', created_at: '' }]);
+        }
+        setLoading(false);
+      });
+  }, [claim, claimId]);
+
+  // Load full detail when a queue item is selected
+  useEffect(() => {
+    if (!selectedId) { setSelectedClaim(null); return; }
+    API.get(selectedId).then(setSelectedClaim).catch(() => {});
+  }, [selectedId]);
+
+  // If we have a current escalated claim but nothing selected, auto-select it
+  useEffect(() => {
+    if (!selectedId && claimId && queue.some(q => q.claim_id === claimId)) {
+      setSelectedId(claimId);
+    }
+  }, [queue, claimId, selectedId]);
+
+  if (selectedClaim) {
+    return React.createElement(ReviewView, {
+      claim: selectedClaim,
+      onDecide: onDecide,
+      onDone: () => { setSelectedId(null); setSelectedClaim(null); onDone(); },
+      onBack: () => { setSelectedId(null); setSelectedClaim(null); },
+    });
+  }
+
+  return (
+    React.createElement('div', { className: 'animate-fadeup' },
+      React.createElement('div', { className: 'mb-7' },
+        React.createElement('h1', { className: 'text-2xl sm:text-3xl font-bold tracking-tight text-slate-900' }, 'Admin — Escalated Claims'),
+        React.createElement('p', { className: 'text-slate-500 mt-1' }, 'Claims requiring human adjuster review.')
+      ),
+      loading
+        ? React.createElement('div', { className: 'text-center py-12 text-slate-400' }, 'Loading escalated claims…')
+        : queue.length === 0
+          ? React.createElement('div', { className: 'text-center py-12' },
+              React.createElement('div', { className: 'text-4xl mb-3' }, '\u2705'),
+              React.createElement('h2', { className: 'text-lg font-bold text-slate-700' }, 'Queue clear'),
+              React.createElement('p', { className: 'text-slate-400 mt-1' }, 'No escalated claims awaiting review.')
+            )
+          : React.createElement('div', { className: 'bg-white rounded-2xl shadow-card border border-slate-200/60 overflow-hidden' },
+              React.createElement('table', { className: 'w-full text-sm' },
+                React.createElement('thead', null,
+                  React.createElement('tr', { className: 'text-left text-xs font-semibold uppercase tracking-wide text-slate-400 border-b border-slate-100' },
+                    React.createElement('th', { className: 'px-6 py-3' }, 'Claim ID'),
+                    React.createElement('th', { className: 'px-4 py-3' }, 'Status'),
+                    React.createElement('th', { className: 'px-4 py-3' }, 'Amount'),
+                    React.createElement('th', { className: 'px-4 py-3' }, 'Created'),
+                    React.createElement('th', { className: 'px-4 py-3' }, ''),
+                  )
+                ),
+                React.createElement('tbody', null,
+                  queue.map(q =>
+                    React.createElement('tr', { key: q.claim_id, className: 'border-b border-slate-50 last:border-0 hover:bg-slate-50/60 transition-colors cursor-pointer', onClick: () => setSelectedId(q.claim_id) },
+                      React.createElement('td', { className: 'px-6 py-3.5 font-mono font-semibold text-brand-700' }, q.claim_id),
+                      React.createElement('td', { className: 'px-4 py-3.5' },
+                        React.createElement('span', { className: 'inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-700' }, '\uD83D\uDC64 Escalated')
+                      ),
+                      React.createElement('td', { className: 'px-4 py-3.5 text-slate-600' }, q.claimed_amount ? '$' + q.claimed_amount : '—'),
+                      React.createElement('td', { className: 'px-4 py-3.5 text-slate-400 text-xs' }, q.created_at ? new Date(q.created_at).toLocaleString() : '—'),
+                      React.createElement('td', { className: 'px-4 py-3.5' },
+                        React.createElement('span', { className: 'text-brand-600 font-semibold text-sm hover:underline' }, 'Review \u2192')
+                      ),
+                    )
+                  )
+                )
+              )
+            )
+    )
+  );
+}
+
+function ReviewView({ claim, onDecide, onDone, onBack }) {
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(null);   // 'approve' | 'deny' | null
   const [err, setErr] = useState(null);
@@ -1135,6 +1265,11 @@ function ReviewView({ claim, onDecide, onDone }) {
   return (
     <div className="animate-fadeup">
       <div className="mb-7 flex items-center gap-3">
+        {onBack && (
+          <button onClick={onBack} className="h-9 w-9 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 grid place-items-center transition-colors shrink-0">
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+          </button>
+        )}
         <span className="text-2xl">🧑‍⚖️</span>
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Human review</h1>

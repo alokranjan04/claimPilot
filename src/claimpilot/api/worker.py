@@ -119,6 +119,7 @@ class ClaimStore:
 
     def __init__(self, checkpointer: Checkpointer) -> None:
         self._cp = checkpointer
+        self._ids: set[str] = set()  # in-memory index for listing
 
     def _key(self, claim_id: str) -> str:
         return f"{_KEY_PREFIX}{claim_id}"
@@ -126,6 +127,7 @@ class ClaimStore:
     async def create(self, claim_id: str) -> ClaimRecord:
         record = ClaimRecord(claim_id=claim_id, status="pending")
         await self._cp.save(self._key(claim_id), record.model_dump(mode="json"))
+        self._ids.add(claim_id)
         return record
 
     async def load(self, claim_id: str) -> ClaimRecord | None:
@@ -137,6 +139,19 @@ class ClaimStore:
     async def save(self, record: ClaimRecord) -> None:
         record.updated_at = datetime.now(tz=UTC)
         await self._cp.save(self._key(record.claim_id), record.model_dump(mode="json"))
+        self._ids.add(record.claim_id)
+
+    async def list_claims(self, *, status: str | None = None) -> list[ClaimRecord]:
+        """Return all tracked claims, optionally filtered by status."""
+        records: list[ClaimRecord] = []
+        for cid in sorted(self._ids, reverse=True):
+            record = await self.load(cid)
+            if record is None:
+                continue
+            if status and record.status != status:
+                continue
+            records.append(record)
+        return records
 
 
 # ---------------------------------------------------------------------------

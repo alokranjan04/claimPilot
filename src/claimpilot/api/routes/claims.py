@@ -23,14 +23,55 @@ from claimpilot.infra.interfaces import Queue, QueueMessage
 from claimpilot.models.claim import RawClaim
 from claimpilot.models.trace import StepTrace
 
-router = APIRouter(prefix="/v1/claims", tags=["claims"])
+router = APIRouter(prefix="/v1", tags=["claims"])
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/me — current user + roles (dev-mode stub)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/me")
+async def get_me() -> dict[str, object]:
+    """Return the current user identity and roles.
+
+    In production this reads from the Entra ID / JWT token.
+    For local dev it returns a default admin user so the UI is fully demoable.
+    """
+    return {"user": "demo-adjuster", "roles": ["adjuster", "admin"]}
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/claims — list all claims (optionally filter by status)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/claims")
+async def list_claims(
+    store: Annotated[ClaimStore, Depends(get_claim_store)],
+    status: str | None = None,
+) -> list[dict[str, object]]:
+    """Return a summary of all tracked claims."""
+    records = await store.list_claims(status=status)
+    return [
+        {
+            "claim_id": r.claim_id,
+            "status": r.status,
+            "disposition": r.disposition,
+            "claimed_amount": str(r.facts_data.get("claimed_amount", "")) if r.facts_data else "",
+            "created_at": r.created_at.isoformat() if r.created_at else "",
+            "updated_at": r.updated_at.isoformat() if r.updated_at else "",
+        }
+        for r in records
+    ]
+
 
 # ---------------------------------------------------------------------------
 # POST /v1/claims — submit
 # ---------------------------------------------------------------------------
 
 
-@router.post("", response_model=SubmitClaimResponse, status_code=202)
+@router.post("/claims", response_model=SubmitClaimResponse, status_code=202)
 async def submit_claim(
     body: SubmitClaimRequest,
     queue: Annotated[Queue, Depends(get_queue)],
@@ -62,7 +103,7 @@ async def submit_claim(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{claim_id}", response_model=ClaimStatusResponse)
+@router.get("/claims/{claim_id}", response_model=ClaimStatusResponse)
 async def get_claim(
     claim_id: str,
     store: Annotated[ClaimStore, Depends(get_claim_store)],
@@ -97,7 +138,7 @@ async def get_claim(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{claim_id}/stream")
+@router.get("/claims/{claim_id}/stream")
 async def stream_claim(
     claim_id: str,
     store: Annotated[ClaimStore, Depends(get_claim_store)],
@@ -173,7 +214,7 @@ def _sse(event: str, data: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-@router.post("/{claim_id}/decision", response_model=HumanDecisionResponse)
+@router.post("/claims/{claim_id}/decision", response_model=HumanDecisionResponse)
 async def human_decision(
     claim_id: str,
     body: HumanDecisionRequest,
