@@ -1,0 +1,89 @@
+name: CD — Build & Deploy to Azure
+
+# Continuous deployment: on a push to main, re-run the gate, build the image
+# in Azure Container Registry, and roll it out to Azure Container Apps.
+#
+# Auth is KEYLESS:
+#   - Pipeline → Azure: OIDC federation (no stored client secret).
+#   - App → Azure data/AI services: the Container App's managed identity.
+# See docs/azure-cicd-setup.md for the one-time setup (federated credential + RBAC).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+# Required for OIDC federation with Azure (no secrets needed for login).
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  IMAGE_NAME: claimpilot
+
+jobs:
+  # 1) Quality gate — same checks as CI; deploy only if green.
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Sync (dev)
+        run: uv sync --extra dev
+      - name: Lint
+        run: uv run ruff check . && uv run ruff format --check .
+      - name: Type-check
+        run: uv run mypy src
+      - name: Tests
+        run: uv run pytest
+      - name: Eval gate
+        run: uv run python evals/run_evals.py   # exits non-zero on metric regression
+
+  # 2) Build in ACR and deploy to Container Apps.
+  deploy:
+    needs: gate
+    runs-on: ubuntu-latest
+    environment: production        # add required reviewers here for a manual approval gate
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC — no secrets)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Build the image in ACR (cloud build — no Docker needed on the runner).
+      - name: Build image in ACR
+        run: |
+          az acr build \
+            --registry ${{ vars.ACR_NAME }} \
+            --image ${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --image ${{ env.IMAGE_NAME }}:latest \
+            .
+
+      # Roll out the new revision to the API Container App.
+      - name: Deploy API to Container Apps
+        run: |
+          az containerapp update \
+            --name ${{ vars.API_APP_NAME }} \
+            --resource-group ${{ vars.AZURE_RG }} \
+            --image ${{ vars.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      # Deploy the worker (same image, different command — see worker_main.py).
+      - name: Deploy Worker to Container Apps
+        run: |
+          az containerapp update \
+            --name ${{ vars.WORKER_APP_NAME }} \
+            --resource-group ${{ vars.AZURE_RG }} \
+            --image ${{ vars.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Show revision
+        run: |
+          az containerapp revision list \
+            --name ${{ vars.API_APP_NAME }} \
+            --resource-group ${{ vars.AZURE_RG }} \
+            --query "[0].{revision:name, active:properties.active, created:properties.createdTime}" \
+            -o table
