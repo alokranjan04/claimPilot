@@ -414,8 +414,9 @@ class TestDI:
         ps = create_providers(Settings(provider="fake"))
         assert isinstance(ps.llm, LLMClient)
 
-    def test_unknown_provider_raises(self) -> None:
-        with pytest.raises(NotImplementedError, match="azure"):
+    def test_azure_provider_requires_azure_extra(self) -> None:
+        """PROVIDER=azure raises ImportError when the azure extra is not installed."""
+        with pytest.raises(ImportError, match="azure"):
             create_providers(Settings(provider="azure"))  # type: ignore[arg-type]
 
 

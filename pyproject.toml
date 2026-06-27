@@ -62,6 +62,18 @@ disallow_any_explicit = false  # set true later; require comments for Any
 plugins = ["pydantic.mypy"]
 mypy_path = "src"
 
+[[tool.mypy.overrides]]
+# Azure + OpenAI SDKs are optional (claimpilot[azure]); suppress missing-import
+# errors so `mypy src` passes without the azure extra installed.
+module = [
+    "openai",
+    "openai.*",
+    "azure.*",
+    "opentelemetry",
+    "opentelemetry.*",
+]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

@@ -14,9 +14,10 @@ Spec-driven, milestone by milestone. Everything runs **offline on deterministic 
 | M7 — Eval harness + CI gate | ✅ Done | 169 |
 | M8 — API + queue + checkpointing | ✅ Done | 182 |
 | M9 — Observability | ✅ Done | 205 |
-| M10–M11 — Azure providers + deploy | 🚧 Next | |
+| M10 — Azure providers | ✅ Done | 240 |
+| M11 — Containerise + deploy | 🚧 Next | |
 
-> The arc: **M0–M2 built the safe, testable foundation · M3 made it flow · M4 gave it grounded knowledge · M5 makes the decisions real · M6 added enterprise tool integration · M7 gates every change on measurable quality · M8 exposes it all as a production-grade async REST API · M9 makes every claim traceable with spans, structured logs, and cost accounting.**
+> The arc: **M0–M2 built the safe, testable foundation · M3 made it flow · M4 gave it grounded knowledge · M5 makes the decisions real · M6 added enterprise tool integration · M7 gates every change on measurable quality · M8 exposes it all as a production-grade async REST API · M9 makes every claim traceable with spans, structured logs, and cost accounting · M10 wires in real Azure services behind the same interfaces — zero core-code changes.**
 
 ---
 
@@ -100,6 +101,32 @@ Three modules in `src/claimpilot/observability/` wired across the entire system:
 
 ---
 
+## M10 — Azure providers ✅
+
+Seven production Azure providers behind the existing interfaces — **zero changes to core, graph, agents, rag, or api code**. `PROVIDER=azure` selects them via the DI factory; `PROVIDER=fake` is unchanged and all 205 original tests still pass.
+
+**Provider package** (`src/claimpilot/infra/providers/azure/`):
+- `AzureOpenAILLMClient` — chat completions via `openai` SDK + `azure-identity` (`DefaultAzureCredential`; no API keys)
+- `AzureOpenAIEmbedder` — `text-embedding-3-small` via the same AOAI endpoint
+- `AzureSearchVectorStore` — HNSW vector upsert/search via `azure-search-documents 11.x` (`VectorizedQuery`); metadata serialised as JSON string for schema flexibility
+- `AzureSearchReranker` — L2 semantic ranker (`query_type="semantic"`) via the same Search service
+- `AzureDocumentIntelligenceExtractor` — `prebuilt-read` model via `azure-ai-documentintelligence`; returns text + page count + avg word confidence
+- `AzureServiceBusQueue` — durable at-least-once delivery with persistent peek-lock receiver and explicit `complete_message` ack
+- `AzureCosmosCheckpointer` — serverless Cosmos DB SQL API; upsert/read/delete by claim_id with partition key `/id`
+
+**Azure Monitor exporter** (`src/claimpilot/observability/azure_exporter.py`):
+- `AzureMonitorSpanExporter` satisfies the `SpanExporter` protocol; calls `configure_azure_monitor()` once then emits OTel spans carrying `claim.id`, `node.name`, `duration_ms`, and error status to Application Insights.
+
+**Settings** — 11 new optional Azure fields in `Settings` (empty-string defaults; only matter with `PROVIDER=azure`): `aoai_endpoint`, `aoai_deployment_chat`, `aoai_deployment_embedding`, `aoai_api_version`, `azure_search_endpoint`, `azure_search_index`, `azure_search_semantic_config`, `azure_docintel_endpoint`, `azure_servicebus_namespace`, `azure_servicebus_queue`, `azure_cosmos_endpoint`, `azure_cosmos_database`, `azure_cosmos_container`, `azure_monitor_connection_string`.
+
+**IaC** (`infra/iac/main.bicep` + `parameters.json`) — Bicep baseline provisioning: Azure OpenAI (GPT-4o + text-embedding-3-small), AI Search (Standard S1 with semantic ranker), Document Intelligence (S0), Service Bus (Standard + `claims` queue), Cosmos DB (Serverless + `checkpoints` container), Log Analytics + Application Insights, Key Vault. All with `disableLocalAuth: true` and Entra ID RBAC.
+
+**Tests** (`tests/test_azure_providers.py`): 35 new tests — all seven providers mocked via `sys.modules` injection (runs without the `azure` extra installed): LLMClient (protocol, generate, structured output, JSON-parse-error handling), Embedder (protocol, dimensions, embed, empty), VectorStore (protocol, upsert, search, delete, empty no-ops), Reranker (protocol, rerank, empty-hits), DocExtractor (protocol, extract text, confidence), Queue (protocol, enqueue, dequeue, ack, unknown-ack no-op, empty-dequeue), Checkpointer (protocol, save, load-existing, load-missing-None, delete, delete-missing-no-op), AzureMonitorSpanExporter (protocol, ok-span, error-span).
+
+**Gate (240 tests, all green):** `ruff` clean · `mypy --strict` clean (66 source files) · 240/240 tests pass offline in 5.8 s.
+
+---
+
 ## What's next
-- **M10–M11** Azure providers (Azure OpenAI, AI Search, Document Intelligence, Container Apps, Azure Monitor OTel exporter) + deploy.
-- **Demo cut line:** M9 is now the cut line — every claim produces a complete, traceable, cost-accounted audit record; M10–M11 wire in the production Azure backend.
+- **M11** Containerise: Dockerfile, Azure Container Apps deployment, CI/CD via GitHub Actions → Azure.
+- **Demo cut line:** M10 is the complete production backend — every interface has a real Azure implementation, IaC provisions all resources, and PROVIDER=azure is a single env-var flip away from a fully operational cloud deployment.

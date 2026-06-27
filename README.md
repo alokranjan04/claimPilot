@@ -13,8 +13,8 @@ A claim comes in. A graph of specialist agents reads it, retrieves the governing
 ![Azure](https://img.shields.io/badge/cloud-Azure-0078D4)
 ![Typing](https://img.shields.io/badge/mypy-strict-2E75B6)
 ![Lint](https://img.shields.io/badge/lint-ruff-D7FF64)
-![Tests](https://img.shields.io/badge/tests-205%20passing-brightgreen)
-![Status](https://img.shields.io/badge/status-M9%20complete-brightgreen)
+![Tests](https://img.shields.io/badge/tests-240%20passing-brightgreen)
+![Status](https://img.shields.io/badge/status-M10%20complete-brightgreen)
 
 </div>
 
@@ -53,6 +53,7 @@ Orchestrated as an **explicit LangGraph state machine** — the business logic l
 | 🌐 **Full REST API** | FastAPI async surface: `POST /v1/claims`, `GET /v1/claims/{id}`, SSE `/stream`, `POST /v1/claims/{id}/decision`, `GET /v1/evals/latest`. Background worker + Checkpointer for pause/resume on escalation. |
 | 📊 **Observability built in** | OTel-compatible spans per node, structured JSON logs (PII-stripped by processor), per-claim cost/latency summary on every API response. Provider-agnostic exporter interface (no-op default; Azure Monitor at M10). |
 | 🔌 **Provider-agnostic core** | Core depends on interfaces; deterministic in-memory **fakes** run the whole system offline. Cloud is a config swap. |
+| ☁️ **Real Azure providers** | AOAI (chat + embeddings) · AI Search (HNSW vector + semantic reranker) · Document Intelligence · Service Bus (peek-lock queue) · Cosmos DB (serverless checkpoints) — each satisfies the same interface contract the fakes do; zero core-code changes, one env-var swap. |
 | 🔐 **Security-by-default** | Entra ID, Private Endpoints, Content Safety, PII redaction, immutable audit trail. |
 | 🧪 **Spec-driven & test-first** | Specs are the source of truth; strict typing + 205 tests gate every milestone. |
 
@@ -96,7 +97,8 @@ Built milestone by milestone (see [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md)):
 - ✅ **M0** Skeleton & quality gate · ✅ **M1** Typed domain models · ✅ **M2** Provider interfaces + fakes
 - ✅ **M3** LangGraph orchestration · ✅ **M4** RAG pipeline · ✅ **M5** Real agents · ✅ **M6** MCP servers
 - ✅ **M7** Eval harness + CI gate · ✅ **M8** API + queue + checkpointing · ✅ **M9** Observability
-- ⬜ **M10–M11** Azure providers + deploy
+- ✅ **M10** Azure providers (AOAI · AI Search · Document Intelligence · Service Bus · Cosmos DB)
+- ⬜ **M11** Containerise + Azure Container Apps deploy
 
 ## License & data
 

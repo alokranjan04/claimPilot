@@ -51,3 +51,32 @@ class Settings(BaseSettings):
 
     # --- Fake provider options ------------------------------------------------
     fake_seed: int = 42
+
+    # --- Azure OpenAI ---------------------------------------------------------
+    # Set when PROVIDER=azure. Empty strings are safe defaults (unused with fake).
+    aoai_endpoint: str = ""
+    aoai_deployment_chat: str = "gpt-4o"
+    aoai_deployment_embedding: str = "text-embedding-3-small"
+    aoai_api_version: str = "2024-02-01"
+
+    # --- Azure AI Search ------------------------------------------------------
+    azure_search_endpoint: str = ""
+    azure_search_index: str = "claimpilot-chunks"
+    azure_search_semantic_config: str = "claimpilot-semantic"
+
+    # --- Azure Document Intelligence ------------------------------------------
+    azure_docintel_endpoint: str = ""
+
+    # --- Azure Service Bus ----------------------------------------------------
+    # Fully-qualified namespace, e.g. mynamespace.servicebus.windows.net
+    azure_servicebus_namespace: str = ""
+    azure_servicebus_queue: str = "claims"
+
+    # --- Azure Cosmos DB ------------------------------------------------------
+    azure_cosmos_endpoint: str = ""
+    azure_cosmos_database: str = "claimpilot"
+    azure_cosmos_container: str = "checkpoints"
+
+    # --- Azure Monitor --------------------------------------------------------
+    # Application Insights connection string (set via env / Key Vault at deploy).
+    azure_monitor_connection_string: str = ""
