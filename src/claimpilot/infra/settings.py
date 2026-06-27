@@ -19,7 +19,12 @@ class Settings(BaseSettings):
     (case-insensitive, prefix-free for simplicity).
     """
 
-    model_config = {"env_prefix": "", "case_sensitive": False}
+    model_config = {
+        "env_prefix": "",
+        "case_sensitive": False,
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+    }
 
     # --- Provider selection ---------------------------------------------------
     provider: Literal["fake", "azure", "aws", "gcp"] = "fake"

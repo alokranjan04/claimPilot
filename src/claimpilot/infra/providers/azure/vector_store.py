@@ -1,13 +1,12 @@
 """Azure AI Search implementation of :class:`~claimpilot.infra.interfaces.VectorStore`.
 
 Uses ``azure-search-documents`` with HNSW vector indexing.  The index is
-expected to be provisioned by the Bicep IaC in ``infra/iac/main.bicep``
-before the provider is used.
+auto-created on first ``upsert`` if it does not already exist.
 
-Field schema expected on the index:
+Field schema on the index:
   - ``id``        (Edm.String, key)
   - ``text``      (Edm.String, searchable)
-  - ``embedding`` (Collection(Edm.Single), vector, 1536-dim HNSW)
+  - ``embedding`` (Collection(Edm.Single), vector, HNSW)
   - ``metadata``  (Edm.String) — JSON-serialised metadata dict
 
 Requires: ``uv sync --extra azure``
@@ -15,6 +14,7 @@ Requires: ``uv sync --extra azure``
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import json
 from typing import Any
@@ -28,6 +28,8 @@ class AzureSearchVectorStore:
     Upserts and queries use the REST API via ``SearchClient``.  Metadata is
     stored as a JSON string in the ``metadata`` field so the index schema
     remains fixed regardless of which metadata keys RAG chunks carry.
+
+    On first ``upsert`` the index is created automatically if it doesn't exist.
     """
 
     def __init__(
@@ -48,26 +50,115 @@ class AzureSearchVectorStore:
 
         from claimpilot.infra.providers.azure._auth import get_credential
 
+        credential = get_credential(api_key)
         # Any justified: azure-search-documents SDK uses typed internals but
         # the top-level client exposes dynamic attributes.
         self._client: Any = SearchClient(
             endpoint=endpoint,
             index_name=index_name,
-            credential=get_credential(api_key),
+            credential=credential,
         )
+        self._endpoint = endpoint
+        self._index_name = index_name
+        self._credential = credential
         self._vector_field = vector_field
         self._embedding_dimensions = embedding_dimensions
+        self._index_ensured = False
+
+    async def _ensure_index(self) -> None:
+        """Create the search index if it does not already exist."""
+        if self._index_ensured:
+            return
+
+        from azure.search.documents.indexes.aio import SearchIndexClient
+        from azure.search.documents.indexes.models import (
+            HnswAlgorithmConfiguration,
+            SearchableField,
+            SearchField,
+            SearchIndex,
+            SemanticConfiguration,
+            SemanticField,
+            SemanticPrioritizedFields,
+            SemanticSearch,
+            SimpleField,
+            VectorSearch,
+            VectorSearchProfile,
+        )
+
+        index_client: Any = SearchIndexClient(
+            endpoint=self._endpoint,
+            credential=self._credential,
+        )
+        try:
+            # Check if index already exists.
+            await index_client.get_index(self._index_name)
+            self._index_ensured = True
+            return
+        except Exception:  # noqa: S110
+            pass  # Index doesn't exist — create it below.
+
+        fields = [
+            SimpleField(
+                name="id",
+                type="Edm.String",
+                key=True,
+                filterable=True,
+            ),
+            SearchableField(
+                name="text",
+                type="Edm.String",
+            ),
+            SearchField(
+                name=self._vector_field,
+                type="Collection(Edm.Single)",
+                searchable=True,
+                vector_search_dimensions=self._embedding_dimensions,
+                vector_search_profile_name="default-profile",
+            ),
+            SimpleField(
+                name="metadata",
+                type="Edm.String",
+            ),
+        ]
+
+        vector_search = VectorSearch(
+            algorithms=[HnswAlgorithmConfiguration(name="default-algo")],
+            profiles=[
+                VectorSearchProfile(
+                    name="default-profile",
+                    algorithm_configuration_name="default-algo",
+                )
+            ],
+        )
+
+        semantic_config = SemanticConfiguration(
+            name="claimpilot-semantic",
+            prioritized_fields=SemanticPrioritizedFields(
+                content_fields=[SemanticField(field_name="text")],
+            ),
+        )
+        semantic_search = SemanticSearch(configurations=[semantic_config])
+
+        index = SearchIndex(
+            name=self._index_name,
+            fields=fields,
+            vector_search=vector_search,
+            semantic_search=semantic_search,
+        )
+        await index_client.create_index(index)
+        self._index_ensured = True
 
     async def upsert(self, records: list[VectorRecord]) -> None:
         """Upload or update documents in the AI Search index."""
         if not records:
             return
+        await self._ensure_index()
         docs = [
             {
-                "id": rec.id,
+                "id": _encode_key(rec.id),
                 "text": rec.text,
                 self._vector_field: rec.embedding,
-                "metadata": json.dumps(rec.metadata),
+                "metadata": json.dumps({**rec.metadata, "_original_id": rec.id}),
             }
             for rec in records
         ]
@@ -96,7 +187,7 @@ class AzureSearchVectorStore:
             # or rely on post-filtering.  Log a warning and skip for now.
             pass
 
-        results = self._client.search(
+        results = await self._client.search(
             search_text=None,
             vector_queries=[vector_query],
             top=top_k,
@@ -113,9 +204,11 @@ class AzureSearchVectorStore:
                 metadata.get(k) == v for k, v in filter_metadata.items()
             ):
                 continue
+            # Recover original ID from metadata or decode the key.
+            original_id = metadata.pop("_original_id", None) or _decode_key(str(doc["id"]))
             hits.append(
                 SearchHit(
-                    id=str(doc["id"]),
+                    id=original_id,
                     text=str(doc.get("text", "")),
                     score=float(doc.get("@search.score", 0.0)),
                     metadata=metadata,
@@ -127,5 +220,19 @@ class AzureSearchVectorStore:
         """Remove documents from the index by id."""
         if not ids:
             return
-        docs = [{"id": id_} for id_ in ids]
+        docs = [{"id": _encode_key(id_)} for id_ in ids]
         await self._client.delete_documents(documents=docs)
+
+
+def _encode_key(key: str) -> str:
+    """URL-safe Base64 encode a document key for AI Search compatibility."""
+    return base64.urlsafe_b64encode(key.encode()).decode().rstrip("=")
+
+
+def _decode_key(encoded: str) -> str:
+    """Decode a URL-safe Base64 encoded document key, or return as-is if invalid."""
+    try:
+        padded = encoded + "=" * (-len(encoded) % 4)
+        return base64.urlsafe_b64decode(padded.encode()).decode()
+    except (UnicodeDecodeError, ValueError):
+        return encoded

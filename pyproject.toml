@@ -29,6 +29,7 @@ azure = [
     "azure-cosmos>=4.7",
     "azure-keyvault-secrets>=4.8",
     "azure-monitor-opentelemetry>=1.6",
+    "aiohttp>=3.9",                       # async transport for azure-core
 ]
 dev = [
     "pytest>=8.2",

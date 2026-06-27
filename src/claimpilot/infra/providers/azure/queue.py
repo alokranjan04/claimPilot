@@ -76,15 +76,18 @@ class AzureServiceBusQueue:
 
     async def dequeue(self, *, timeout_seconds: float = 30.0) -> QueueMessage | None:
         """Receive one message, or ``None`` if the timeout elapses."""
+        # Ensure at least 1 second wait — int(0.5) truncates to 0 which means
+        # "return immediately" in Service Bus, causing the worker to never see messages.
+        wait = max(1, int(timeout_seconds))
         if self._receiver is None:
             self._receiver = self._sb_client.get_queue_receiver(
                 queue_name=self._queue_name,
-                max_wait_time=int(timeout_seconds),
+                max_wait_time=wait,
             )
 
         received = await self._receiver.receive_messages(
             max_message_count=1,
-            max_wait_time=int(timeout_seconds),
+            max_wait_time=wait,
         )
         if not received:
             return None

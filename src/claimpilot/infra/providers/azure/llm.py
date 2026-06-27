@@ -78,7 +78,9 @@ class AzureOpenAILLMClient:
             "model": model or self._deployment,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": max_tokens,
+            # Newer models (gpt-5.x, o-series) require max_completion_tokens;
+            # max_tokens is deprecated.  Use the new parameter for all models.
+            "max_completion_tokens": max_tokens,
         }
         if response_schema is not None:
             kwargs["response_format"] = {"type": "json_object"}

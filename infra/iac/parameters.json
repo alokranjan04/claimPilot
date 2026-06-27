@@ -6,16 +6,10 @@
       "value": "dev"
     },
     "location": {
-      "value": "eastus2"
+      "value": "southindia"
     },
-    "aoaiChatCapacity": {
-      "value": 10
-    },
-    "aoaiEmbeddingCapacity": {
-      "value": 10
-    },
-    "embeddingDimensions": {
-      "value": 1536
+    "aiServicesLocation": {
+      "value": "eastus"
     }
   }
 }

@@ -66,24 +66,11 @@ class AzureSearchReranker:
         if not hits:
             return []
 
-        from azure.search.documents.models import VectorizedQuery
-
-        # Build an ID filter so semantic reranker only scores our candidates.
-        id_list = ", ".join(f"'{h.id}'" for h in hits)
-        odata_filter = f"search.in(id, '{id_list}', ',')"
-
-        # Use a dummy zero-vector for the vector query to retrieve by filter;
-        # the semantic ranker will re-score by text relevance.
-        dummy_vec = [0.0] * (len(hits[0].score) if False else 1536)  # noqa: SIM210
-        vector_query = VectorizedQuery(
-            vector=dummy_vec,
-            k_nearest_neighbors=len(hits),
-            fields=self._vector_field,
-        )
-        results = self._client.search(
+        # Use a pure semantic (text) search over the full index — no OData
+        # filter on IDs since AI Search keys are Base64-encoded.  The semantic
+        # ranker re-scores by text relevance; top_k keeps only the best.
+        results = await self._client.search(
             search_text=query,
-            vector_queries=[vector_query],
-            filter=odata_filter,
             query_type="semantic",
             semantic_configuration_name=self._semantic_config,
             top=top_k,
@@ -97,9 +84,10 @@ class AzureSearchReranker:
             metadata: dict[str, str] = {}
             with contextlib.suppress(json.JSONDecodeError, TypeError):
                 metadata = json.loads(raw_meta)
+            original_id = metadata.pop("_original_id", None) or str(doc["id"])
             reranked.append(
                 SearchHit(
-                    id=str(doc["id"]),
+                    id=original_id,
                     text=str(doc.get("text", "")),
                     score=float(doc.get("@search.reranker_score") or doc.get("@search.score", 0.0)),
                     metadata=metadata,

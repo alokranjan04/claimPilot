@@ -39,12 +39,17 @@ from claimpilot.infra.interfaces import (
 _AZURE_MODULES = [
     "openai",
     "azure",
+    "azure.core",
+    "azure.core.credentials",
     "azure.identity",
     "azure.identity.aio",
     "azure.search",
     "azure.search.documents",
     "azure.search.documents.aio",
     "azure.search.documents.models",
+    "azure.search.documents.indexes",
+    "azure.search.documents.indexes.aio",
+    "azure.search.documents.indexes.models",
     "azure.ai",
     "azure.ai.documentintelligence",
     "azure.ai.documentintelligence.aio",
@@ -59,6 +64,23 @@ _AZURE_MODULES = [
     "opentelemetry",
     "opentelemetry.trace",
 ]
+
+
+class _AsyncSearchResults:
+    """Mock async iterable for Azure Search results."""
+
+    def __init__(self, docs: list[dict[str, Any]]) -> None:
+        self._docs = docs
+
+    def __aiter__(self) -> _AsyncSearchResults:
+        self._iter = iter(self._docs)
+        return self
+
+    async def __anext__(self) -> dict[str, Any]:
+        try:
+            return next(self._iter)
+        except StopIteration:
+            raise StopAsyncIteration from None
 
 
 @pytest.fixture(autouse=True)
@@ -225,9 +247,9 @@ class TestAzureSearchVectorStore:
         mock_client.upload_documents = AsyncMock(return_value=None)
         mock_client.delete_documents = AsyncMock(return_value=None)
 
-        # search returns an async iterator of docs
-        async def _fake_search(*args: Any, **kwargs: Any) -> Any:
-            docs = [
+        # search returns an awaitable that resolves to an async iterable
+        search_results = _AsyncSearchResults(
+            [
                 {
                     "id": "chunk-1",
                     "text": "policy text",
@@ -235,16 +257,22 @@ class TestAzureSearchVectorStore:
                     "metadata": json.dumps({"doc_id": "p1"}),
                 }
             ]
-            for doc in docs:
-                yield doc
-
-        mock_client.search = MagicMock(return_value=_fake_search())
+        )
+        mock_client.search = AsyncMock(return_value=search_results)
 
         sys.modules["azure.identity.aio"].DefaultAzureCredential = MagicMock()  # type: ignore[attr-defined]
+        sys.modules["azure.core.credentials"].AzureKeyCredential = MagicMock()  # type: ignore[attr-defined]
         sys.modules["azure.search.documents.aio"].SearchClient = MagicMock(  # type: ignore[attr-defined]
             return_value=mock_client
         )
         sys.modules["azure.search.documents.models"].VectorizedQuery = MagicMock()  # type: ignore[attr-defined]
+
+        # Mock the index client for _ensure_index
+        mock_index_client = MagicMock()
+        mock_index_client.get_index = AsyncMock(return_value=MagicMock())  # index exists
+        sys.modules["azure.search.documents.indexes.aio"].SearchIndexClient = MagicMock(  # type: ignore[attr-defined]
+            return_value=mock_index_client
+        )
 
         from claimpilot.infra.providers.azure.vector_store import AzureSearchVectorStore
 
@@ -296,8 +324,8 @@ class TestAzureSearchReranker:
     def _make_reranker(self) -> Any:
         mock_client = MagicMock()
 
-        async def _fake_search(*args: Any, **kwargs: Any) -> Any:
-            docs = [
+        search_results = _AsyncSearchResults(
+            [
                 {
                     "id": "chunk-1",
                     "text": "reranked text",
@@ -305,16 +333,14 @@ class TestAzureSearchReranker:
                     "metadata": "{}",
                 }
             ]
-            for doc in docs:
-                yield doc
-
-        mock_client.search = MagicMock(return_value=_fake_search())
+        )
+        mock_client.search = AsyncMock(return_value=search_results)
 
         sys.modules["azure.identity.aio"].DefaultAzureCredential = MagicMock()  # type: ignore[attr-defined]
+        sys.modules["azure.core.credentials"].AzureKeyCredential = MagicMock()  # type: ignore[attr-defined]
         sys.modules["azure.search.documents.aio"].SearchClient = MagicMock(  # type: ignore[attr-defined]
             return_value=mock_client
         )
-        sys.modules["azure.search.documents.models"].VectorizedQuery = MagicMock()  # type: ignore[attr-defined]
 
         from claimpilot.infra.providers.azure.reranker import AzureSearchReranker
 

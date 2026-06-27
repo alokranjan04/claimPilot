@@ -1,25 +1,28 @@
 // ClaimPilot — Azure baseline infrastructure
-// Provisions all data/AI services required by the PROVIDER=azure stack.
+// Provisions the data/AI services required by the PROVIDER=azure stack.
+// Azure OpenAI is NOT included — use your existing AOAI resource.
 // Container Apps deployment (M11) is handled separately.
 //
 // Deploy:
-//   az group create -n rg-claimpilot-dev -l eastus2
+//   az group create -n rg-claimpilot-dev -l southindia
 //   az deployment group create \
 //     -g rg-claimpilot-dev \
 //     -f infra/iac/main.bicep \
-//     -p @infra/iac/parameters.json
+//     -p @infra/iac/parameters.json \
+//     -p location=southindia
 //
 // Resources created:
-//   - Azure OpenAI (GPT-4o + text-embedding-3-small)
 //   - Azure AI Search (Standard S1, semantic ranker enabled)
-//   - Azure AI Document Intelligence (S0)
+//   - Azure AI Document Intelligence (S0, in docIntelLocation)
 //   - Azure Service Bus (Standard, single queue)
 //   - Azure Cosmos DB (serverless, SQL API)
 //   - Azure Monitor / Application Insights (Log Analytics workspace)
 //   - Azure Key Vault (for secrets at runtime)
 //
+// NOT created (bring your own):
+//   - Azure OpenAI — use existing resource, set AOAI_ENDPOINT + AOAI_API_KEY in .env
+//
 // Auth: Managed Identity is used everywhere — no connection strings in config.
-// Call `az role assignment create` (see outputs) after deployment.
 
 @description('Short environment tag — appended to every resource name.')
 @allowed(['dev', 'staging', 'prod'])
@@ -28,14 +31,8 @@ param environment string = 'dev'
 @description('Azure region for all resources.')
 param location string = resourceGroup().location
 
-@description('GPT-4o chat model deployment capacity (PTUs).')
-param aoaiChatCapacity int = 10
-
-@description('text-embedding-3-small deployment capacity (PTUs).')
-param aoaiEmbeddingCapacity int = 10
-
-@description('Embedding vector dimensions (must match application setting).')
-param embeddingDimensions int = 1536
+@description('Region for AI Search + Document Intelligence (semantic ranker not available in all regions).')
+param aiServicesLocation string = 'centralindia'
 
 // ---------------------------------------------------------------------------
 // Name tokens
@@ -93,73 +90,20 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
 }
 
 // ---------------------------------------------------------------------------
-// Azure OpenAI
-// ---------------------------------------------------------------------------
-
-resource aoai 'Microsoft.CognitiveServices/accounts@2023-10-01-preview' = {
-  name: '${prefix}-aoai-${uniqueSuffix}'
-  location: location
-  kind: 'OpenAI'
-  sku: {
-    name: 'S0'
-  }
-  properties: {
-    customSubDomainName: '${prefix}-aoai-${uniqueSuffix}'
-    publicNetworkAccess: 'Enabled'   // restrict via Private Endpoint at prod
-    disableLocalAuth: true           // Entra ID only — no API keys
-  }
-}
-
-resource gpt4oDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-10-01-preview' = {
-  parent: aoai
-  name: 'gpt-4o'
-  sku: {
-    name: 'Standard'
-    capacity: aoaiChatCapacity
-  }
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: 'gpt-4o'
-      version: '2024-05-13'
-    }
-    versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
-  }
-}
-
-resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-10-01-preview' = {
-  parent: aoai
-  name: 'text-embedding-3-small'
-  dependsOn: [gpt4oDeployment]
-  sku: {
-    name: 'Standard'
-    capacity: aoaiEmbeddingCapacity
-  }
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: 'text-embedding-3-small'
-      version: '1'
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Azure AI Search (Standard S1 — required for semantic ranker)
 // ---------------------------------------------------------------------------
 
 resource search 'Microsoft.Search/searchServices@2023-11-01' = {
   name: '${prefix}-search-${uniqueSuffix}'
-  location: location
+  location: aiServicesLocation  // semantic ranker not available in southindia
   sku: {
     name: 'standard'
   }
   properties: {
     replicaCount: 1
     partitionCount: 1
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: 'enabled'
     semanticSearch: 'standard'       // enables semantic ranker
-    disableLocalAuth: true           // Entra ID only
   }
 }
 
@@ -169,15 +113,14 @@ resource search 'Microsoft.Search/searchServices@2023-11-01' = {
 
 resource docIntel 'Microsoft.CognitiveServices/accounts@2023-10-01-preview' = {
   name: '${prefix}-docintel-${uniqueSuffix}'
-  location: location
+  location: aiServicesLocation  // FormRecognizer unavailable in some regions (e.g. southindia)
   kind: 'FormRecognizer'
   sku: {
     name: 'S0'
   }
   properties: {
     customSubDomainName: '${prefix}-docintel-${uniqueSuffix}'
-    publicNetworkAccess: 'Enabled'
-    disableLocalAuth: true
+    publicNetworkAccess: 'enabled'
   }
 }
 
@@ -233,7 +176,6 @@ resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2023-09-15' = {
     consistencyPolicy: {
       defaultConsistencyLevel: 'Session'
     }
-    disableLocalAuth: true             // Entra ID RBAC only
     minimalTlsVersion: 'Tls12'
   }
 }
@@ -264,23 +206,32 @@ resource checkpointsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabase
 }
 
 // ---------------------------------------------------------------------------
-// Outputs (used by az role assignment create commands and app config)
+// Outputs (used by az CLI key-fetch commands and .env config)
 // ---------------------------------------------------------------------------
-
-@description('Azure OpenAI endpoint — set as AOAI_ENDPOINT env var.')
-output aoaiEndpoint string = aoai.properties.endpoint
 
 @description('Azure AI Search endpoint — set as AZURE_SEARCH_ENDPOINT env var.')
 output searchEndpoint string = 'https://${search.name}.search.windows.net'
 
+@description('Azure AI Search resource name — use with az search admin-key show.')
+output searchName string = search.name
+
 @description('Document Intelligence endpoint — set as AZURE_DOCINTEL_ENDPOINT env var.')
 output docIntelEndpoint string = docIntel.properties.endpoint
+
+@description('Document Intelligence resource name — use with az cognitiveservices account keys list.')
+output docIntelName string = docIntel.name
 
 @description('Service Bus fully-qualified namespace — set as AZURE_SERVICEBUS_NAMESPACE env var.')
 output serviceBusNamespaceFqdn string = '${serviceBusNamespace.name}.servicebus.windows.net'
 
+@description('Service Bus namespace name — use with az servicebus namespace authorization-rule keys list.')
+output serviceBusName string = serviceBusNamespace.name
+
 @description('Cosmos DB endpoint — set as AZURE_COSMOS_ENDPOINT env var.')
 output cosmosEndpoint string = cosmos.properties.documentEndpoint
+
+@description('Cosmos DB account name — use with az cosmosdb keys list.')
+output cosmosName string = cosmos.name
 
 @description('Application Insights connection string — set as AZURE_MONITOR_CONNECTION_STRING env var.')
 output appInsightsConnectionString string = appInsights.properties.ConnectionString
