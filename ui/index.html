@@ -1242,6 +1242,8 @@ function EvalsView({ demoMode }) {
   }
 
   const entries = Object.entries(data || {});
+  const metrics = entries.filter(([, v]) => !Array.isArray(v));
+  const caseResults = entries.filter(([, v]) => Array.isArray(v));
   return (
     <div className="animate-fadeup">
       <div className="flex items-end justify-between gap-4 mb-7">
@@ -1252,8 +1254,9 @@ function EvalsView({ demoMode }) {
         {isDemo && <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-md bg-amber-100 text-amber-700">Demo data</span>}
       </div>
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-        {entries.map(([k, v], i) => <EvalStat key={k} name={k} value={v} index={i} />)}
+        {metrics.map(([k, v], i) => <EvalStat key={k} name={k} value={v} index={i} />)}
       </div>
+      {caseResults.map(([k, v]) => <CaseResultsTable key={k} name={k} rows={v} />)}
     </div>
   );
 }
@@ -1280,6 +1283,58 @@ function EvalStat({ name, value, index }) {
       )}
       {sub && <div className="mt-2 text-xs text-slate-400">{sub}</div>}
     </div>
+  );
+}
+
+function CaseResultsTable({ name, rows }) {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const label = name.replace(/[_\-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  const DISP_STYLE = {
+    auto_approved: { icon: '\u2705', bg: 'bg-emerald-50', text: 'text-emerald-700', label: 'Approved' },
+    escalated:     { icon: '\uD83D\uDC64', bg: 'bg-amber-50',   text: 'text-amber-700',   label: 'Escalated' },
+    auto_denied:   { icon: '\u26D4', bg: 'bg-rose-50',    text: 'text-rose-700',    label: 'Denied' },
+  };
+  const dispBadge = (d) => {
+    const s = DISP_STYLE[d] || { icon: '', bg: 'bg-slate-50', text: 'text-slate-600', label: d || '—' };
+    return React.createElement('span', { className: ['inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold', s.bg, s.text].join(' ') }, s.icon + ' ' + s.label);
+  };
+  const passCount = rows.filter(r => r.passed).length;
+  return (
+    React.createElement('div', { className: 'mt-6 bg-white rounded-2xl shadow-card border border-slate-200/60 overflow-hidden animate-fadeup' },
+      React.createElement('div', { className: 'px-6 py-5 border-b border-slate-100 flex items-center justify-between' },
+        React.createElement('div', null,
+          React.createElement('h2', { className: 'font-bold text-slate-900' }, label),
+          React.createElement('p', { className: 'text-xs text-slate-400 mt-0.5' }, passCount + '/' + rows.length + ' cases passed')
+        ),
+        React.createElement('span', { className: ['text-sm font-bold px-3 py-1 rounded-full', passCount === rows.length ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'].join(' ') }, passCount === rows.length ? 'All passed' : passCount + ' passed')
+      ),
+      React.createElement('div', { className: 'overflow-x-auto' },
+        React.createElement('table', { className: 'w-full text-sm' },
+          React.createElement('thead', null,
+            React.createElement('tr', { className: 'text-left text-xs font-semibold uppercase tracking-wide text-slate-400 border-b border-slate-100' },
+              React.createElement('th', { className: 'px-6 py-3' }, 'Case'),
+              React.createElement('th', { className: 'px-4 py-3' }, 'Status'),
+              React.createElement('th', { className: 'px-4 py-3' }, 'Expected'),
+              React.createElement('th', { className: 'px-4 py-3' }, 'Actual'),
+            )
+          ),
+          React.createElement('tbody', null,
+            rows.map((r, i) =>
+              React.createElement('tr', { key: i, className: 'border-b border-slate-50 last:border-0 hover:bg-slate-50/60 transition-colors' },
+                React.createElement('td', { className: 'px-6 py-3 font-mono font-semibold text-slate-800' }, r.case_id || 'Case ' + (i + 1)),
+                React.createElement('td', { className: 'px-4 py-3' },
+                  r.passed
+                    ? React.createElement('span', { className: 'inline-flex items-center gap-1 text-emerald-600 font-semibold' }, '\u2713 Pass')
+                    : React.createElement('span', { className: 'inline-flex items-center gap-1 text-rose-600 font-semibold' }, '\u2717 Fail')
+                ),
+                React.createElement('td', { className: 'px-4 py-3' }, dispBadge(r.expected_disposition)),
+                React.createElement('td', { className: 'px-4 py-3' }, dispBadge(r.actual_disposition)),
+              )
+            )
+          )
+        )
+      )
+    )
   );
 }
 
