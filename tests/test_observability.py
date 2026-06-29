@@ -93,6 +93,14 @@ def test_span_exporter_protocol_satisfied() -> None:
 _CLAUSE = "POL-100:§1.1 Comprehensive Coverage"
 
 _APPROVE_SCRIPTS = [
+    # 0. Intake — extract facts from FNOL
+    {
+        "incident_type": "auto_collision",
+        "claimed_amount": "5000.00",
+        "incident_date": "2026-06-29",
+        "location": "Springfield, IL",
+        "parties": [{"name": "Test Claimant", "role": "claimant"}],
+    },
     {
         "decision": "covered",
         "confidence": 0.95,

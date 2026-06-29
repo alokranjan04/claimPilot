@@ -64,26 +64,110 @@ class _CostTracker:
 
 
 # ---------------------------------------------------------------------------
-# Stub nodes (intake — real extraction arrives in a later milestone)
+# Intake — LLM-powered extraction from FNOL text
 # ---------------------------------------------------------------------------
 
+_INTAKE_SYSTEM = """\
+You are an insurance claim intake specialist. Extract structured facts from
+the First Notice of Loss (FNOL) narrative.
 
-def intake(state: GraphState) -> dict[str, Any]:
-    """Stub: extract ClaimFacts from the raw FNOL."""
-    raw = state["raw_input"]
-    match = re.search(r"\$(\d[\d,]*(?:\.\d{1,2})?)", raw.fnol_text)
-    amount = Decimal(match.group(1).replace(",", "")) if match else Decimal("5000")
+Return a JSON object with exactly these fields:
+- "incident_type": one of "auto_collision", "property_damage", "theft",
+  "water_damage", "fire", "hail_storm", "liability", "other"
+  Choose the type that best matches the narrative. Do NOT default to
+  auto_collision unless the narrative actually describes a vehicle collision.
+- "claimed_amount": string decimal (e.g. "1800.00"). Extract from the
+  narrative; if no amount is stated, use "0".
+- "incident_date": ISO date string (YYYY-MM-DD). Extract from narrative;
+  if unclear, use today's date.
+- "location": string location if mentioned, else "Unknown".
+- "parties": list of {"name": string, "role": string} extracted from the
+  narrative. If no names, return [{"name": "Claimant", "role": "claimant"}].
+"""
 
-    facts = ClaimFacts(
-        incident_type="auto_collision",
-        incident_date=date.today(),
-        claimed_amount=amount,
-        location="Springfield, IL",
-        parties=[Party(name="Stub Claimant", role="claimant")],
-        extracted_fields={"fnol_narrative": raw.fnol_text},
-    )
-    trace = StepTrace(node="intake", inputs={"claim_id": raw.claim_id}, outputs=facts.model_dump())
-    return {"facts": facts, "trace": [trace]}
+
+def make_intake_node(llm: LLMClient):  # type: ignore[no-untyped-def]
+    """Create the intake node — LLM extracts structured facts from the FNOL."""
+
+    async def intake(state: GraphState) -> dict[str, Any]:
+        raw = state["raw_input"]
+        tracker = _CostTracker(llm)
+
+        # Regex fallback for amount (in case LLM misses it).
+        match = re.search(r"\$(\d[\d,]*(?:\.\d{1,2})?)", raw.fnol_text)
+        regex_amount = match.group(1).replace(",", "") if match else "0"
+
+        # Also try plain number + "dollars"
+        if regex_amount == "0":
+            match2 = re.search(r"(\d[\d,]*(?:\.\d{1,2})?)\s*dollars", raw.fnol_text, re.IGNORECASE)
+            if match2:
+                regex_amount = match2.group(1).replace(",", "")
+
+        messages = [
+            {"role": "system", "content": _INTAKE_SYSTEM},
+            {"role": "user", "content": f"FNOL narrative:\n{raw.fnol_text}"},
+        ]
+
+        try:
+            import json as _json
+
+            response = await tracker.generate(messages, response_schema=ClaimFacts)
+            parsed = _json.loads(response["content"])
+
+            incident_type = str(parsed.get("incident_type", "other"))
+            raw_amount = str(parsed.get("claimed_amount", regex_amount))
+            # Clean amount string
+            raw_amount = raw_amount.replace(",", "").replace("$", "")
+            fallback = regex_amount or "5000"
+            amount = Decimal(raw_amount) if raw_amount and raw_amount != "0" else Decimal(fallback)
+
+            incident_date_str = str(parsed.get("incident_date", ""))
+            try:
+                incident_dt = date.fromisoformat(incident_date_str)
+            except (ValueError, TypeError):
+                incident_dt = date.today()
+
+            location = str(parsed.get("location", "Unknown")) or "Unknown"
+
+            raw_parties = parsed.get("parties", [])
+            parties: list[Party] = []
+            if isinstance(raw_parties, list):
+                for p in raw_parties:
+                    if isinstance(p, dict) and p.get("name"):
+                        parties.append(
+                            Party(
+                                name=str(p["name"]),
+                                role=str(p.get("role", "claimant")),
+                            )
+                        )
+            if not parties:
+                parties = [Party(name="Claimant", role="claimant")]
+
+        except Exception:  # noqa: BLE001
+            # Fallback to regex extraction if LLM fails.
+            incident_type = "other"
+            amount = Decimal(regex_amount) if regex_amount != "0" else Decimal("5000")
+            incident_dt = date.today()
+            location = "Unknown"
+            parties = [Party(name="Claimant", role="claimant")]
+
+        facts = ClaimFacts(
+            incident_type=incident_type,
+            incident_date=incident_dt,
+            claimed_amount=amount,
+            location=location,
+            parties=parties,
+            extracted_fields={"fnol_narrative": raw.fnol_text},
+        )
+        trace = StepTrace(
+            node="intake",
+            inputs={"claim_id": raw.claim_id},
+            outputs=facts.model_dump(),
+            cost_usd=tracker.cost_usd,
+        )
+        return {"facts": facts, "trace": [trace]}
+
+    return intake
 
 
 # ---------------------------------------------------------------------------

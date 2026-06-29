@@ -3,15 +3,22 @@
     {
       "doc_id": "POL-100",
       "title": "Standard Auto Policy",
-      "text": "# §1.1 Comprehensive Coverage\nThis section covers damage to the insured vehicle from collisions, theft, vandalism, weather events, and animal strikes. The deductible is $500 per incident. Maximum payout is the actual cash value.\n\n# §1.2 Liability Coverage\nCovers bodily injury and property damage the insured causes to others. Minimum limit is $25,000 per occurrence.\n\n# §1.3 Exclusions\nDoes not cover intentional damage, racing, or commercial use of the insured vehicle.",
-      "metadata": {"jurisdiction": "IL", "policy_type": "auto"}
+      "text": "# \u00c2\u00a71.1 Comprehensive Coverage\nThis section covers damage to the insured vehicle from collisions, theft, vandalism, weather events, and animal strikes. The deductible is $500 per incident. Maximum payout is the actual cash value.\n\n# \u00c2\u00a71.2 Liability Coverage\nCovers bodily injury and property damage the insured causes to others. Minimum limit is $25,000 per occurrence.\n\n# \u00c2\u00a71.3 Exclusions\nDoes not cover intentional damage, racing, or commercial use of the insured vehicle.",
+      "metadata": {
+        "jurisdiction": "IL",
+        "policy_type": "auto"
+      }
     }
   ],
   "cases": [
     {
       "id": "EVL-001",
-      "description": "Clean low-amount collision claim — auto_approved on all thresholds",
-      "tags": ["auto_approve", "collision", "happy_path"],
+      "description": "Clean low-amount collision claim \u00e2\u20ac\u201d auto_approved on all thresholds",
+      "tags": [
+        "auto_approve",
+        "collision",
+        "happy_path"
+      ],
       "claim": {
         "claim_id": "EVL-001",
         "policy_number": "POL-100",
@@ -20,23 +27,44 @@
       "rag_tau_sufficient": 0.001,
       "llm_scripted": [
         {
+          "incident_type": "auto_collision",
+          "claimed_amount": "5000.00",
+          "incident_date": "2026-06-29",
+          "location": "Springfield, IL",
+          "parties": [
+            {
+              "name": "Test Claimant",
+              "role": "claimant"
+            }
+          ]
+        },
+        {
           "decision": "covered",
           "confidence": 0.95,
-          "rationale": "Collision damage is explicitly covered under §1.1 Comprehensive Coverage.",
+          "rationale": "Collision damage is explicitly covered under \u00c2\u00a71.1 Comprehensive Coverage.",
           "citations": [
             {
-              "clause_id": "POL-100:§1.1 Comprehensive Coverage",
+              "clause_id": "POL-100:\u00c2\u00a71.1 Comprehensive Coverage",
               "document": "Standard Auto Policy",
               "snippet": "covers damage to the insured vehicle from collisions"
             }
           ]
         },
-        {"score": 0.05, "signals": [], "recommendation": "approve"},
+        {
+          "score": 0.05,
+          "signals": [],
+          "recommendation": "approve"
+        },
         {
           "payable_amount": "4500.00",
           "deductible_applied": "500.00",
           "limit_applied": "100000.00",
-          "breakdown": [{"description": "Vehicle repair costs", "amount": "4500.00"}]
+          "breakdown": [
+            {
+              "description": "Vehicle repair costs",
+              "amount": "4500.00"
+            }
+          ]
         },
         {
           "passed": true,
@@ -48,13 +76,20 @@
       "expected": {
         "disposition": "auto_approved",
         "coverage_decision": "covered",
-        "expects_tool_calls": ["claims_history.lookup", "fraud_signals.score", "regs.search"]
+        "expects_tool_calls": [
+          "claims_history.lookup",
+          "fraud_signals.score",
+          "regs.search"
+        ]
       }
     },
     {
       "id": "EVL-002",
       "description": "High-settlement amount triggers escalation (above $10k threshold)",
-      "tags": ["escalate", "high_amount"],
+      "tags": [
+        "escalate",
+        "high_amount"
+      ],
       "claim": {
         "claim_id": "EVL-002",
         "policy_number": "POL-100",
@@ -63,23 +98,44 @@
       "rag_tau_sufficient": 0.001,
       "llm_scripted": [
         {
+          "incident_type": "auto_collision",
+          "claimed_amount": "5000.00",
+          "incident_date": "2026-06-29",
+          "location": "Springfield, IL",
+          "parties": [
+            {
+              "name": "Test Claimant",
+              "role": "claimant"
+            }
+          ]
+        },
+        {
           "decision": "covered",
           "confidence": 0.95,
-          "rationale": "Total-loss collision is covered under §1.1.",
+          "rationale": "Total-loss collision is covered under \u00c2\u00a71.1.",
           "citations": [
             {
-              "clause_id": "POL-100:§1.1 Comprehensive Coverage",
+              "clause_id": "POL-100:\u00c2\u00a71.1 Comprehensive Coverage",
               "document": "Standard Auto Policy",
               "snippet": "covers damage to the insured vehicle from collisions"
             }
           ]
         },
-        {"score": 0.08, "signals": [], "recommendation": "approve"},
+        {
+          "score": 0.08,
+          "signals": [],
+          "recommendation": "approve"
+        },
         {
           "payable_amount": "49500.00",
           "deductible_applied": "500.00",
           "limit_applied": "100000.00",
-          "breakdown": [{"description": "Total-loss vehicle replacement", "amount": "49500.00"}]
+          "breakdown": [
+            {
+              "description": "Total-loss vehicle replacement",
+              "amount": "49500.00"
+            }
+          ]
         },
         {
           "passed": true,
@@ -91,13 +147,20 @@
       "expected": {
         "disposition": "escalated",
         "coverage_decision": "covered",
-        "expects_tool_calls": ["claims_history.lookup", "fraud_signals.score", "regs.search"]
+        "expects_tool_calls": [
+          "claims_history.lookup",
+          "fraud_signals.score",
+          "regs.search"
+        ]
       }
     },
     {
       "id": "EVL-003",
       "description": "Low coverage confidence (0.60 < 0.80 threshold) forces escalation",
-      "tags": ["escalate", "low_confidence"],
+      "tags": [
+        "escalate",
+        "low_confidence"
+      ],
       "claim": {
         "claim_id": "EVL-003",
         "policy_number": "POL-100",
@@ -106,23 +169,46 @@
       "rag_tau_sufficient": 0.001,
       "llm_scripted": [
         {
+          "incident_type": "auto_collision",
+          "claimed_amount": "5000.00",
+          "incident_date": "2026-06-29",
+          "location": "Springfield, IL",
+          "parties": [
+            {
+              "name": "Test Claimant",
+              "role": "claimant"
+            }
+          ]
+        },
+        {
           "decision": "partial",
-          "confidence": 0.60,
-          "rationale": "Incident type is ambiguous; partial coverage may apply under §1.1.",
+          "confidence": 0.6,
+          "rationale": "Incident type is ambiguous; partial coverage may apply under \u00c2\u00a71.1.",
           "citations": [
             {
-              "clause_id": "POL-100:§1.1 Comprehensive Coverage",
+              "clause_id": "POL-100:\u00c2\u00a71.1 Comprehensive Coverage",
               "document": "Standard Auto Policy",
               "snippet": "covers damage to the insured vehicle from collisions"
             }
           ]
         },
-        {"score": 0.10, "signals": ["Incident type unclear"], "recommendation": "review"},
+        {
+          "score": 0.1,
+          "signals": [
+            "Incident type unclear"
+          ],
+          "recommendation": "review"
+        },
         {
           "payable_amount": "2500.00",
           "deductible_applied": "500.00",
           "limit_applied": "100000.00",
-          "breakdown": [{"description": "Partial coverage payment", "amount": "2500.00"}]
+          "breakdown": [
+            {
+              "description": "Partial coverage payment",
+              "amount": "2500.00"
+            }
+          ]
         },
         {
           "passed": true,
@@ -134,13 +220,20 @@
       "expected": {
         "disposition": "escalated",
         "coverage_decision": "partial",
-        "expects_tool_calls": ["claims_history.lookup", "fraud_signals.score", "regs.search"]
+        "expects_tool_calls": [
+          "claims_history.lookup",
+          "fraud_signals.score",
+          "regs.search"
+        ]
       }
     },
     {
       "id": "EVL-004",
       "description": "High fraud risk score (0.75 > 0.30 threshold) forces escalation",
-      "tags": ["escalate", "fraud_risk"],
+      "tags": [
+        "escalate",
+        "fraud_risk"
+      ],
       "claim": {
         "claim_id": "EVL-004",
         "policy_number": "POL-100",
@@ -149,12 +242,24 @@
       "rag_tau_sufficient": 0.001,
       "llm_scripted": [
         {
+          "incident_type": "auto_collision",
+          "claimed_amount": "5000.00",
+          "incident_date": "2026-06-29",
+          "location": "Springfield, IL",
+          "parties": [
+            {
+              "name": "Test Claimant",
+              "role": "claimant"
+            }
+          ]
+        },
+        {
           "decision": "covered",
-          "confidence": 0.90,
-          "rationale": "Collision type is covered under §1.1.",
+          "confidence": 0.9,
+          "rationale": "Collision type is covered under \u00c2\u00a71.1.",
           "citations": [
             {
-              "clause_id": "POL-100:§1.1 Comprehensive Coverage",
+              "clause_id": "POL-100:\u00c2\u00a71.1 Comprehensive Coverage",
               "document": "Standard Auto Policy",
               "snippet": "covers damage to the insured vehicle from collisions"
             }
@@ -162,14 +267,22 @@
         },
         {
           "score": 0.75,
-          "signals": ["Claim filed immediately after policy renewal", "Inconsistent damage description"],
+          "signals": [
+            "Claim filed immediately after policy renewal",
+            "Inconsistent damage description"
+          ],
           "recommendation": "escalate"
         },
         {
           "payable_amount": "7500.00",
           "deductible_applied": "500.00",
           "limit_applied": "100000.00",
-          "breakdown": [{"description": "Vehicle repair", "amount": "7500.00"}]
+          "breakdown": [
+            {
+              "description": "Vehicle repair",
+              "amount": "7500.00"
+            }
+          ]
         },
         {
           "passed": true,
@@ -181,13 +294,20 @@
       "expected": {
         "disposition": "escalated",
         "coverage_decision": "covered",
-        "expects_tool_calls": ["claims_history.lookup", "fraud_signals.score", "regs.search"]
+        "expects_tool_calls": [
+          "claims_history.lookup",
+          "fraud_signals.score",
+          "regs.search"
+        ]
       }
     },
     {
       "id": "EVL-005",
       "description": "Compliance failure (missing documentation) forces escalation",
-      "tags": ["escalate", "compliance_failure"],
+      "tags": [
+        "escalate",
+        "compliance_failure"
+      ],
       "claim": {
         "claim_id": "EVL-005",
         "policy_number": "POL-100",
@@ -196,27 +316,51 @@
       "rag_tau_sufficient": 0.001,
       "llm_scripted": [
         {
+          "incident_type": "auto_collision",
+          "claimed_amount": "5000.00",
+          "incident_date": "2026-06-29",
+          "location": "Springfield, IL",
+          "parties": [
+            {
+              "name": "Test Claimant",
+              "role": "claimant"
+            }
+          ]
+        },
+        {
           "decision": "covered",
           "confidence": 0.85,
-          "rationale": "Rear-end collision is covered under §1.1.",
+          "rationale": "Rear-end collision is covered under \u00c2\u00a71.1.",
           "citations": [
             {
-              "clause_id": "POL-100:§1.1 Comprehensive Coverage",
+              "clause_id": "POL-100:\u00c2\u00a71.1 Comprehensive Coverage",
               "document": "Standard Auto Policy",
               "snippet": "covers damage to the insured vehicle from collisions"
             }
           ]
         },
-        {"score": 0.12, "signals": [], "recommendation": "approve"},
+        {
+          "score": 0.12,
+          "signals": [],
+          "recommendation": "approve"
+        },
         {
           "payable_amount": "5500.00",
           "deductible_applied": "500.00",
           "limit_applied": "100000.00",
-          "breakdown": [{"description": "Collision repair", "amount": "5500.00"}]
+          "breakdown": [
+            {
+              "description": "Collision repair",
+              "amount": "5500.00"
+            }
+          ]
         },
         {
           "passed": false,
-          "violations": ["Missing police report documentation", "No independent damage estimate provided"],
+          "violations": [
+            "Missing police report documentation",
+            "No independent damage estimate provided"
+          ],
           "rationale": "Illinois regulations require a police report for claims exceeding $1500.",
           "citations": []
         }
@@ -224,13 +368,20 @@
       "expected": {
         "disposition": "escalated",
         "coverage_decision": "covered",
-        "expects_tool_calls": ["claims_history.lookup", "fraud_signals.score", "regs.search"]
+        "expects_tool_calls": [
+          "claims_history.lookup",
+          "fraud_signals.score",
+          "regs.search"
+        ]
       }
     },
     {
       "id": "EVL-006",
-      "description": "Coverage denied (commercial use exclusion) — auto_denied path",
-      "tags": ["auto_deny", "exclusion"],
+      "description": "Coverage denied (commercial use exclusion) \u00e2\u20ac\u201d auto_denied path",
+      "tags": [
+        "auto_deny",
+        "exclusion"
+      ],
       "claim": {
         "claim_id": "EVL-006",
         "policy_number": "POL-100",
@@ -239,35 +390,58 @@
       "rag_tau_sufficient": 0.001,
       "llm_scripted": [
         {
+          "incident_type": "auto_collision",
+          "claimed_amount": "5000.00",
+          "incident_date": "2026-06-29",
+          "location": "Springfield, IL",
+          "parties": [
+            {
+              "name": "Test Claimant",
+              "role": "claimant"
+            }
+          ]
+        },
+        {
           "decision": "denied",
           "confidence": 0.95,
-          "rationale": "Damage occurred during commercial use, explicitly excluded under §1.3.",
+          "rationale": "Damage occurred during commercial use, explicitly excluded under \u00c2\u00a71.3.",
           "citations": [
             {
-              "clause_id": "POL-100:§1.3 Exclusions",
+              "clause_id": "POL-100:\u00c2\u00a71.3 Exclusions",
               "document": "Standard Auto Policy",
               "snippet": "Does not cover intentional damage, racing, or commercial use"
             }
           ]
         },
-        {"score": 0.05, "signals": [], "recommendation": "deny"},
+        {
+          "score": 0.05,
+          "signals": [],
+          "recommendation": "deny"
+        },
         {
           "passed": true,
           "violations": [],
-          "rationale": "Denial is compliant with policy exclusion §1.3.",
+          "rationale": "Denial is compliant with policy exclusion \u00c2\u00a71.3.",
           "citations": []
         }
       ],
       "expected": {
         "disposition": "auto_denied",
         "coverage_decision": "denied",
-        "expects_tool_calls": ["claims_history.lookup", "fraud_signals.score", "regs.search"]
+        "expects_tool_calls": [
+          "claims_history.lookup",
+          "fraud_signals.score",
+          "regs.search"
+        ]
       }
     },
     {
       "id": "EVL-007",
-      "description": "Edge case: all metrics just above thresholds — auto_approved",
-      "tags": ["auto_approve", "edge_case"],
+      "description": "Edge case: all metrics just above thresholds \u00e2\u20ac\u201d auto_approved",
+      "tags": [
+        "auto_approve",
+        "edge_case"
+      ],
       "claim": {
         "claim_id": "EVL-007",
         "policy_number": "POL-100",
@@ -276,23 +450,46 @@
       "rag_tau_sufficient": 0.001,
       "llm_scripted": [
         {
+          "incident_type": "auto_collision",
+          "claimed_amount": "5000.00",
+          "incident_date": "2026-06-29",
+          "location": "Springfield, IL",
+          "parties": [
+            {
+              "name": "Test Claimant",
+              "role": "claimant"
+            }
+          ]
+        },
+        {
           "decision": "covered",
           "confidence": 0.82,
-          "rationale": "Side-swipe collision covered under §1.1.",
+          "rationale": "Side-swipe collision covered under \u00c2\u00a71.1.",
           "citations": [
             {
-              "clause_id": "POL-100:§1.1 Comprehensive Coverage",
+              "clause_id": "POL-100:\u00c2\u00a71.1 Comprehensive Coverage",
               "document": "Standard Auto Policy",
               "snippet": "covers damage to the insured vehicle from collisions"
             }
           ]
         },
-        {"score": 0.28, "signals": ["Minor inconsistency in timeline"], "recommendation": "approve"},
+        {
+          "score": 0.28,
+          "signals": [
+            "Minor inconsistency in timeline"
+          ],
+          "recommendation": "approve"
+        },
         {
           "payable_amount": "9300.00",
           "deductible_applied": "500.00",
           "limit_applied": "100000.00",
-          "breakdown": [{"description": "Body repair and paint", "amount": "9300.00"}]
+          "breakdown": [
+            {
+              "description": "Body repair and paint",
+              "amount": "9300.00"
+            }
+          ]
         },
         {
           "passed": true,
@@ -304,13 +501,20 @@
       "expected": {
         "disposition": "auto_approved",
         "coverage_decision": "covered",
-        "expects_tool_calls": ["claims_history.lookup", "fraud_signals.score", "regs.search"]
+        "expects_tool_calls": [
+          "claims_history.lookup",
+          "fraud_signals.score",
+          "regs.search"
+        ]
       }
     },
     {
       "id": "EVL-008",
-      "description": "Multiple threshold failures simultaneously — escalated",
-      "tags": ["escalate", "multi_failure"],
+      "description": "Multiple threshold failures simultaneously \u00e2\u20ac\u201d escalated",
+      "tags": [
+        "escalate",
+        "multi_failure"
+      ],
       "claim": {
         "claim_id": "EVL-008",
         "policy_number": "POL-100",
@@ -319,12 +523,24 @@
       "rag_tau_sufficient": 0.001,
       "llm_scripted": [
         {
+          "incident_type": "auto_collision",
+          "claimed_amount": "5000.00",
+          "incident_date": "2026-06-29",
+          "location": "Springfield, IL",
+          "parties": [
+            {
+              "name": "Test Claimant",
+              "role": "claimant"
+            }
+          ]
+        },
+        {
           "decision": "partial",
           "confidence": 0.65,
-          "rationale": "Partial coverage possible; liability split unclear under §1.1 and §1.2.",
+          "rationale": "Partial coverage possible; liability split unclear under \u00c2\u00a71.1 and \u00c2\u00a71.2.",
           "citations": [
             {
-              "clause_id": "POL-100:§1.1 Comprehensive Coverage",
+              "clause_id": "POL-100:\u00c2\u00a71.1 Comprehensive Coverage",
               "document": "Standard Auto Policy",
               "snippet": "covers damage to the insured vehicle from collisions"
             }
@@ -332,18 +548,28 @@
         },
         {
           "score": 0.65,
-          "signals": ["Multiple prior claims", "Inconsistent witness statements"],
+          "signals": [
+            "Multiple prior claims",
+            "Inconsistent witness statements"
+          ],
           "recommendation": "escalate"
         },
         {
           "payable_amount": "14000.00",
           "deductible_applied": "500.00",
           "limit_applied": "100000.00",
-          "breakdown": [{"description": "Partial settlement estimate", "amount": "14000.00"}]
+          "breakdown": [
+            {
+              "description": "Partial settlement estimate",
+              "amount": "14000.00"
+            }
+          ]
         },
         {
           "passed": false,
-          "violations": ["Expired driver license at time of incident"],
+          "violations": [
+            "Expired driver license at time of incident"
+          ],
           "rationale": "Illinois law requires a valid license; this claim requires human review.",
           "citations": []
         }
@@ -351,13 +577,20 @@
       "expected": {
         "disposition": "escalated",
         "coverage_decision": "partial",
-        "expects_tool_calls": ["claims_history.lookup", "fraud_signals.score", "regs.search"]
+        "expects_tool_calls": [
+          "claims_history.lookup",
+          "fraud_signals.score",
+          "regs.search"
+        ]
       }
     },
     {
       "id": "EVL-009",
-      "description": "Damage at deductible threshold — $0 payable still auto_approved",
-      "tags": ["auto_approve", "zero_payable"],
+      "description": "Damage at deductible threshold \u00e2\u20ac\u201d $0 payable still auto_approved",
+      "tags": [
+        "auto_approve",
+        "zero_payable"
+      ],
       "claim": {
         "claim_id": "EVL-009",
         "policy_number": "POL-100",
@@ -366,23 +599,44 @@
       "rag_tau_sufficient": 0.001,
       "llm_scripted": [
         {
+          "incident_type": "auto_collision",
+          "claimed_amount": "5000.00",
+          "incident_date": "2026-06-29",
+          "location": "Springfield, IL",
+          "parties": [
+            {
+              "name": "Test Claimant",
+              "role": "claimant"
+            }
+          ]
+        },
+        {
           "decision": "covered",
           "confidence": 0.92,
-          "rationale": "Minor vandalism-type damage is covered under §1.1.",
+          "rationale": "Minor vandalism-type damage is covered under \u00c2\u00a71.1.",
           "citations": [
             {
-              "clause_id": "POL-100:§1.1 Comprehensive Coverage",
+              "clause_id": "POL-100:\u00c2\u00a71.1 Comprehensive Coverage",
               "document": "Standard Auto Policy",
               "snippet": "covers damage to the insured vehicle from collisions, theft, vandalism"
             }
           ]
         },
-        {"score": 0.02, "signals": [], "recommendation": "approve"},
+        {
+          "score": 0.02,
+          "signals": [],
+          "recommendation": "approve"
+        },
         {
           "payable_amount": "0.00",
           "deductible_applied": "500.00",
           "limit_applied": "100000.00",
-          "breakdown": [{"description": "Deductible offsets full repair amount", "amount": "0.00"}]
+          "breakdown": [
+            {
+              "description": "Deductible offsets full repair amount",
+              "amount": "0.00"
+            }
+          ]
         },
         {
           "passed": true,
@@ -394,13 +648,20 @@
       "expected": {
         "disposition": "auto_approved",
         "coverage_decision": "covered",
-        "expects_tool_calls": ["claims_history.lookup", "fraud_signals.score", "regs.search"]
+        "expects_tool_calls": [
+          "claims_history.lookup",
+          "fraud_signals.score",
+          "regs.search"
+        ]
       }
     },
     {
       "id": "EVL-010",
-      "description": "Insufficient RAG context (exotic claim) — coverage guard fires, escalated",
-      "tags": ["escalate", "insufficient_context"],
+      "description": "Insufficient RAG context (exotic claim) \u00e2\u20ac\u201d coverage guard fires, escalated",
+      "tags": [
+        "escalate",
+        "insufficient_context"
+      ],
       "claim": {
         "claim_id": "EVL-010",
         "policy_number": "POL-100",
@@ -408,12 +669,33 @@
       },
       "rag_tau_sufficient": 0.99,
       "llm_scripted": [
-        {"score": 0.05, "signals": [], "recommendation": "review"},
+        {
+          "incident_type": "auto_collision",
+          "claimed_amount": "5000.00",
+          "incident_date": "2026-06-29",
+          "location": "Springfield, IL",
+          "parties": [
+            {
+              "name": "Test Claimant",
+              "role": "claimant"
+            }
+          ]
+        },
+        {
+          "score": 0.05,
+          "signals": [],
+          "recommendation": "review"
+        },
         {
           "payable_amount": "0.00",
           "deductible_applied": "0.00",
           "limit_applied": "100000.00",
-          "breakdown": [{"description": "Pending coverage determination", "amount": "0.00"}]
+          "breakdown": [
+            {
+              "description": "Pending coverage determination",
+              "amount": "0.00"
+            }
+          ]
         },
         {
           "passed": true,
@@ -425,7 +707,11 @@
       "expected": {
         "disposition": "escalated",
         "coverage_decision": "partial",
-        "expects_tool_calls": ["claims_history.lookup", "fraud_signals.score", "regs.search"]
+        "expects_tool_calls": [
+          "claims_history.lookup",
+          "fraud_signals.score",
+          "regs.search"
+        ]
       }
     }
   ]

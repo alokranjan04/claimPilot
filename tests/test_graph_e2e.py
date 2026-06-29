@@ -90,10 +90,21 @@ _CLAUSE_COMP = "POL-100:§1.1 Comprehensive Coverage"
 _CLAUSE_LIAB = "POL-100:§1.2 Liability Coverage"
 
 
+_INTAKE_RESPONSE: dict[str, object] = {
+    "incident_type": "auto_collision",
+    "claimed_amount": "5000.00",
+    "incident_date": "2026-06-29",
+    "location": "Springfield, IL",
+    "parties": [{"name": "Test Claimant", "role": "claimant"}],
+}
+
+
 def _auto_approve_llm() -> FakeLLMClient:
     """Fake LLM scripted for the happy auto-approve path."""
     return FakeLLMClient(
         scripted=[
+            # 0. Intake — extract facts from FNOL
+            _INTAKE_RESPONSE,
             # 1. Coverage — covered
             {
                 "decision": "covered",
@@ -131,6 +142,8 @@ def _escalate_high_amount_llm() -> FakeLLMClient:
     """Fake LLM scripted for the escalation path (high settlement)."""
     return FakeLLMClient(
         scripted=[
+            # 0. Intake
+            _INTAKE_RESPONSE,
             # 1. Coverage — covered
             {
                 "decision": "covered",

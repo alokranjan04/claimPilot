@@ -94,8 +94,19 @@ _CORPUS = [
 
 _CLAUSE = "POL-100:§1.1 Comprehensive Coverage"
 
+# Intake LLM response — shared across all test scripts.
+_INTAKE_RESPONSE = {
+    "incident_type": "auto_collision",
+    "claimed_amount": "5000.00",
+    "incident_date": "2026-06-29",
+    "location": "Springfield, IL",
+    "parties": [{"name": "Test Claimant", "role": "claimant"}],
+}
+
 # LLM scripted for auto-approved path (50 claim's worth).
+# Order: intake → coverage → fraud → settlement → compliance (per claim).
 _APPROVE_SCRIPTS = [
+    _INTAKE_RESPONSE,
     {
         "decision": "covered",
         "confidence": 0.95,
@@ -120,6 +131,7 @@ _APPROVE_SCRIPTS = [
 
 # LLM scripted for escalation via high settlement (50 claims).
 _ESCALATE_SCRIPTS = [
+    _INTAKE_RESPONSE,
     {
         "decision": "covered",
         "confidence": 0.95,

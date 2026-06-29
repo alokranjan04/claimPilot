@@ -86,7 +86,7 @@ def build_graph(
     graph = StateGraph(GraphState)
 
     # ── Nodes — async agent nodes via _safe, sync routing/terminal via _timed ─
-    graph.add_node("intake", _safe("intake", nodes.intake, _exp))
+    graph.add_node("intake", _safe("intake", nodes.make_intake_node(llm), _exp))
     graph.add_node(
         "policy_retrieval",
         _safe("policy_retrieval", nodes.make_policy_retrieval_node(rag), _exp),
