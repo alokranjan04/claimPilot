@@ -26,6 +26,8 @@ from claimpilot.api.worker import ClaimStore, EventBus, run_worker
 from claimpilot.graph.build_graph import build_graph
 from claimpilot.infra.di import create_providers
 from claimpilot.infra.settings import Settings
+from claimpilot.observability.logging import configure_logging
+from claimpilot.observability.tracer import NoOpSpanExporter, SpanExporter
 from claimpilot.rag.models import SourceDoc
 from claimpilot.rag.pipeline import RagPipeline
 
@@ -114,6 +116,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+        configure_logging()
         providers = create_providers(_settings)
         _llm = llm or providers.llm
 
@@ -125,7 +128,19 @@ def create_app(
         )
         await rag.ingest(_corpus)
 
-        graph = build_graph(_settings, llm=_llm, rag=rag)
+        # Wire the Azure Monitor span exporter when a connection string is set.
+        span_exporter: SpanExporter = NoOpSpanExporter()
+        if _settings.azure_monitor_connection_string:
+            try:
+                from claimpilot.observability.azure_exporter import AzureMonitorSpanExporter
+
+                span_exporter = AzureMonitorSpanExporter(
+                    connection_string=_settings.azure_monitor_connection_string,
+                )
+            except ImportError:
+                pass  # azure extra not installed; fall back to no-op
+
+        graph = build_graph(_settings, llm=_llm, rag=rag, span_exporter=span_exporter)
 
         store = ClaimStore(providers.checkpointer)
         bus = EventBus()
